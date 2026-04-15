@@ -6,8 +6,6 @@ import (
 	"os"
 )
 
-var Version = "dev"
-
 func Execute(args []string) int {
 	return execute(os.Stdout, os.Stderr, args)
 }
@@ -55,13 +53,14 @@ func printRootUsage(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  gh dep-risk pr [<number>|<url>] [flags]")
-	fmt.Fprintln(w, "  gh dep-risk version")
+	fmt.Fprintln(w, "  gh dep-risk version [--json]")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Examples:")
 	fmt.Fprintln(w, "  gh dep-risk pr 123")
 	fmt.Fprintln(w, "  gh dep-risk pr https://github.com/OWNER/REPO/pull/123")
 	fmt.Fprintln(w, "  gh dep-risk pr --format json --fail-level high")
 	fmt.Fprintln(w, "  gh dep-risk version")
+	fmt.Fprintln(w, "  gh dep-risk version --json")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Run `gh dep-risk pr --help` for flags.")
 }

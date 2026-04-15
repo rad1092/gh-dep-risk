@@ -1,0 +1,104 @@
+{
+  "repo": "owner/repo",
+  "pr": {
+    "number": 123,
+    "url": "https://github.com/owner/repo/pull/123",
+    "title": "Update dependencies",
+    "draft": false,
+    "base_sha": "base-sha",
+    "head_sha": "head-sha",
+    "author_login": "octocat"
+  },
+  "score": 48,
+  "level": "high",
+  "blast_radius": "medium",
+  "dependency_review_available": false,
+  "summary": [
+    "1 npm dependency changes were detected.",
+    "Dependency Review was unavailable, so lockfile-only fallback analysis was used.",
+    "Top risk signals: major version bump, install script."
+  ],
+  "risk_drivers": [
+    "major_version_bump",
+    "install_script_detected"
+  ],
+  "recommended_actions": [
+    "inspect_install_scripts",
+    "review_release_notes"
+  ],
+  "quick_commands": [
+    "npm ls left-pad"
+  ],
+  "notes": [
+    {
+      "code": "dependency_review_unavailable"
+    }
+  ],
+  "changes": [
+    {
+      "name": "left-pad",
+      "target": "root",
+      "change_type": "updated",
+      "scope": "runtime",
+      "direct": true,
+      "from_version": "1.0.0",
+      "to_version": "2.0.0",
+      "score": 48,
+      "level": "high",
+      "risk_drivers": [
+        "major_version_bump",
+        "install_script_detected"
+      ],
+      "added_transitive_count": 0
+    }
+  ],
+  "targets": [
+    {
+      "target": {
+        "display_name": "root",
+        "manifest_path": "package.json",
+        "lockfile_path": "package-lock.json",
+        "kind": "root"
+      },
+      "dependency_review_available": false,
+      "score": 48,
+      "level": "high",
+      "blast_radius": "medium",
+      "changed_dependencies": [
+        {
+          "name": "left-pad",
+          "target": "root",
+          "change_type": "updated",
+          "scope": "runtime",
+          "direct": true,
+          "from_version": "1.0.0",
+          "to_version": "2.0.0",
+          "score": 48,
+          "level": "high",
+          "risk_drivers": [
+            "major_version_bump",
+            "install_script_detected"
+          ],
+          "added_transitive_count": 0
+        }
+      ],
+      "risk_drivers": [
+        "major_version_bump",
+        "install_script_detected"
+      ],
+      "recommended_actions": [
+        "inspect_install_scripts",
+        "review_release_notes"
+      ],
+      "quick_commands": [
+        "npm ls left-pad"
+      ],
+      "notes": [
+        {
+          "code": "dependency_review_unavailable"
+        }
+      ],
+      "added_transitive_count": 0
+    }
+  ]
+}

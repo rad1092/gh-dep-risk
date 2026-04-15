@@ -1,0 +1,141 @@
+{
+  "repo": "owner/repo",
+  "pr": {
+    "number": 456,
+    "url": "https://github.com/owner/repo/pull/456",
+    "title": "Update workspace dependencies",
+    "draft": false,
+    "base_sha": "base-workspace",
+    "head_sha": "head-workspace",
+    "author_login": "octocat"
+  },
+  "score": 52,
+  "level": "high",
+  "blast_radius": "medium",
+  "dependency_review_available": true,
+  "summary": [
+    "2 npm dependency changes were detected.",
+    "2 npm targets were analyzed.",
+    "Top risk signals: direct runtime addition."
+  ],
+  "risk_drivers": [
+    "added_direct_runtime_dependency"
+  ],
+  "recommended_actions": [
+    "run_targeted_tests"
+  ],
+  "quick_commands": [
+    "cd apps/web \u0026\u0026 npm ls --all",
+    "cd apps/web \u0026\u0026 npm ls axios",
+    "cd packages/ui \u0026\u0026 npm ls --all"
+  ],
+  "changes": [
+    {
+      "name": "axios",
+      "target": "apps/web",
+      "change_type": "added",
+      "scope": "runtime",
+      "direct": true,
+      "to_version": "1.7.0",
+      "score": 48,
+      "level": "high",
+      "risk_drivers": [
+        "added_direct_runtime_dependency"
+      ],
+      "added_transitive_count": 0
+    },
+    {
+      "name": "tailwind-merge",
+      "target": "packages/ui",
+      "change_type": "added",
+      "scope": "runtime",
+      "direct": true,
+      "to_version": "2.3.0",
+      "score": 22,
+      "level": "medium",
+      "risk_drivers": [
+        "added_direct_runtime_dependency"
+      ],
+      "added_transitive_count": 0
+    }
+  ],
+  "targets": [
+    {
+      "target": {
+        "display_name": "apps/web",
+        "manifest_path": "apps/web/package.json",
+        "lockfile_path": "package-lock.json",
+        "kind": "workspace"
+      },
+      "dependency_review_available": true,
+      "score": 48,
+      "level": "high",
+      "blast_radius": "medium",
+      "changed_dependencies": [
+        {
+          "name": "axios",
+          "target": "apps/web",
+          "change_type": "added",
+          "scope": "runtime",
+          "direct": true,
+          "to_version": "1.7.0",
+          "score": 48,
+          "level": "high",
+          "risk_drivers": [
+            "added_direct_runtime_dependency"
+          ],
+          "added_transitive_count": 0
+        }
+      ],
+      "risk_drivers": [
+        "added_direct_runtime_dependency"
+      ],
+      "recommended_actions": [
+        "run_targeted_tests"
+      ],
+      "quick_commands": [
+        "cd apps/web \u0026\u0026 npm ls --all",
+        "cd apps/web \u0026\u0026 npm ls axios"
+      ],
+      "added_transitive_count": 0
+    },
+    {
+      "target": {
+        "display_name": "packages/ui",
+        "manifest_path": "packages/ui/package.json",
+        "lockfile_path": "package-lock.json",
+        "kind": "workspace"
+      },
+      "dependency_review_available": true,
+      "score": 22,
+      "level": "medium",
+      "blast_radius": "low",
+      "changed_dependencies": [
+        {
+          "name": "tailwind-merge",
+          "target": "packages/ui",
+          "change_type": "added",
+          "scope": "runtime",
+          "direct": true,
+          "to_version": "2.3.0",
+          "score": 22,
+          "level": "medium",
+          "risk_drivers": [
+            "added_direct_runtime_dependency"
+          ],
+          "added_transitive_count": 0
+        }
+      ],
+      "risk_drivers": [
+        "added_direct_runtime_dependency"
+      ],
+      "recommended_actions": [
+        "run_targeted_tests"
+      ],
+      "quick_commands": [
+        "cd packages/ui \u0026\u0026 npm ls --all"
+      ],
+      "added_transitive_count": 0
+    }
+  ]
+}

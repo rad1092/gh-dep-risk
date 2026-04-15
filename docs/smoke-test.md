@@ -1,0 +1,72 @@
+# Smoke Test
+
+These smoke tests are designed for release validation. They assume you are in
+the repository root and have a built binary or an installed extension.
+
+On Windows PowerShell, use `.\gh-dep-risk.exe` instead of `./gh-dep-risk`.
+
+## 1. Local CLI run against a real PR
+
+```bash
+gh auth login
+export GH_REPO=OWNER/REPO
+go build -o gh-dep-risk .
+./gh-dep-risk pr 123
+```
+
+Verify:
+
+- the command exits `0`, `2`, `3`, or `4` as documented
+- the report includes repo, PR, score, blast radius, and recommended actions
+
+## 2. Workflow dispatch run
+
+```bash
+gh workflow run .github/workflows/dep-risk-manual.yml -f pr=123
+gh run watch
+```
+
+Verify:
+
+- the workflow summary contains the aggregate markdown output
+- the artifact includes `dep-risk-human.txt`, `dep-risk.json`, `dep-risk.md`,
+  `metadata.json`
+- if multiple targets changed, the artifact also includes `targets/...`
+
+## 3. Comment mode
+
+```bash
+./gh-dep-risk pr 123 --comment
+```
+
+Verify:
+
+- exactly one marker comment owned by the current authenticated user remains
+- older duplicate comments owned by the same user are removed
+- marker comments from other authors are not edited or deleted
+
+## 4. Fail-level mode
+
+```bash
+./gh-dep-risk pr 123 --fail-level high
+```
+
+Verify:
+
+- exit code `3` is returned only when the final score meets or exceeds the
+  threshold
+- the report still renders before the exit code is surfaced
+
+## 5. Monorepo target selection
+
+```bash
+./gh-dep-risk pr 123 --list-targets
+./gh-dep-risk pr 123 --path apps/web
+./gh-dep-risk pr 123 --path package.json --bundle-dir ./out
+```
+
+Verify:
+
+- `--list-targets` exits `0` and prints detected npm targets
+- `--path` restricts analysis to the selected target or targets
+- aggregate and per-target bundle files are written when `--bundle-dir` is set

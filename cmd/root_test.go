@@ -32,6 +32,19 @@ func TestExecuteVersionHelp(t *testing.T) {
 	}
 }
 
+func TestExecuteVersionJSONHelpExample(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := execute(&stdout, &stderr, []string{"--help"})
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	if !strings.Contains(stdout.String(), "gh dep-risk version --json") {
+		t.Fatalf("expected root help to mention version --json, got %q", stdout.String())
+	}
+}
+
 func TestExecutePRRejectsUnsupportedFormat(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

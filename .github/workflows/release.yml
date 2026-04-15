@@ -11,12 +11,19 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      BUILD_COMMIT: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - run: go test ./...
+      - name: Run tests
+        run: go test ./...
+      - name: Set build date
+        shell: bash
+        run: echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - uses: cli/gh-extension-precompile@v2
         with:
           go_version_file: go.mod
+          build_script_override: scripts/build-release.sh
