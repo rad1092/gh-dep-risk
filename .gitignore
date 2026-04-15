@@ -1,5 +1,6 @@
 /gh-dep-risk
 /gh-dep-risk.exe
+/gh-dep-risk_*
 /dist/
 /bin/
 /coverage.out

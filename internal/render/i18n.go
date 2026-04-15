@@ -2,6 +2,8 @@ package render
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"gh-dep-risk/internal/analysis"
 )
@@ -20,14 +22,16 @@ func translator(lang string) func(string) string {
 				return "영향 범위"
 			case "dependency_review":
 				return "Dependency Review 사용 가능"
-			case "changed_deps":
-				return "변경된 의존성 수"
 			case "notes":
 				return "참고"
+			case "summary":
+				return "요약"
 			case "what_changed":
-				return "무엇이 바뀌었나"
+				return "변경 사항"
 			case "why_risky":
-				return "위험 신호"
+				return "왜 위험한가"
+			case "risk_signals":
+				return "위험 근거"
 			case "recommended_actions":
 				return "권장 조치"
 			case "quick_commands":
@@ -37,6 +41,7 @@ func translator(lang string) func(string) string {
 			}
 		}
 	}
+
 	return func(key string) string {
 		switch key {
 		case "repo":
@@ -49,16 +54,18 @@ func translator(lang string) func(string) string {
 			return "Blast radius"
 		case "dependency_review":
 			return "Dependency review available"
-		case "changed_deps":
-			return "Changed dependencies"
 		case "notes":
 			return "Notes"
+		case "summary":
+			return "Summary"
 		case "what_changed":
 			return "What changed"
 		case "why_risky":
 			return "Why risky"
+		case "risk_signals":
+			return "Risk signals"
 		case "recommended_actions":
-			return "Recommended action"
+			return "Recommended actions"
 		case "quick_commands":
 			return "Quick commands"
 		default:
@@ -90,6 +97,8 @@ func localizeDrivers(drivers []string, lang string) []string {
 				items = append(items, "The PR adds at least 5 new transitive packages.")
 			case analysis.DriverTransitiveFifteen:
 				items = append(items, "The PR adds at least 15 new transitive packages.")
+			default:
+				items = append(items, driver)
 			}
 			continue
 		}
@@ -102,7 +111,7 @@ func localizeDrivers(drivers []string, lang string) []string {
 		case analysis.DriverAddedDirectDev:
 			items = append(items, "직접 개발 의존성이 새로 추가되었습니다.")
 		case analysis.DriverMajorVersionBump:
-			items = append(items, "메이저 버전 경계가 변경되었습니다.")
+			items = append(items, "메이저 버전 경계를 넘는 변경입니다.")
 		case analysis.DriverRecentlyPublished:
 			items = append(items, "대상 버전이 최근 7일 이내에 배포되었습니다.")
 		case analysis.DriverInstallScript:
@@ -113,6 +122,8 @@ func localizeDrivers(drivers []string, lang string) []string {
 			items = append(items, "새로운 전이 의존성이 5개 이상 추가되었습니다.")
 		case analysis.DriverTransitiveFifteen:
 			items = append(items, "새로운 전이 의존성이 15개 이상 추가되었습니다.")
+		default:
+			items = append(items, driver)
 		}
 	}
 	return items
@@ -137,6 +148,7 @@ func localizeAction(action, lang string) string {
 			return action
 		}
 	}
+
 	switch action {
 	case analysis.ActionInspectInstall:
 		return "병합 전에 설치 스크립트와 패키지 tarball을 확인하세요."
@@ -145,11 +157,11 @@ func localizeAction(action, lang string) string {
 	case analysis.ActionReviewAdvisories:
 		return "병합 전에 GHSA advisory를 검토하세요."
 	case analysis.ActionReviewChangelog:
-		return "업스트림 릴리즈 노트와 마이그레이션 가이드를 읽으세요."
+		return "업스트림 릴리스 노트와 마이그레이션 가이드를 읽으세요."
 	case analysis.ActionRunTargetedTests:
 		return "영향 경로에 대한 타깃 테스트와 스모크 테스트를 실행하세요."
 	case analysis.ActionValidateSources:
-		return "레지스트리 외부 또는 git 소스를 별도로 검증하세요."
+		return "레지스트리 외 소스나 git 소스를 별도로 검증하세요."
 	default:
 		return action
 	}
@@ -161,17 +173,124 @@ func localizeNote(note analysis.Note, lang string) string {
 		case analysis.NoteDependencyReviewFallback:
 			return "Dependency review API was unavailable, so lockfile-only fallback analysis was used."
 		case analysis.NoteNonRegistrySource:
-			return fmt.Sprintf("%s resolves from a non-registry source: %s", note.Dependency, note.Detail)
+			return fmt.Sprintf("%s resolves from a non-default source: %s", note.Dependency, note.Detail)
 		default:
 			return note.Code
 		}
 	}
+
 	switch note.Code {
 	case analysis.NoteDependencyReviewFallback:
 		return "Dependency Review API를 사용할 수 없어 lockfile 기반 fallback 분석을 사용했습니다."
 	case analysis.NoteNonRegistrySource:
-		return fmt.Sprintf("%s 패키지가 레지스트리 외부 소스로 해석됩니다: %s", note.Dependency, note.Detail)
+		return fmt.Sprintf("%s 패키지가 기본 npm 레지스트리 외 소스로 해석됩니다: %s", note.Dependency, note.Detail)
 	default:
 		return note.Code
 	}
+}
+
+func localizeSummaryCount(changeCount int, lang string) string {
+	if lang == "en" {
+		return fmt.Sprintf("%d npm dependency changes were detected.", changeCount)
+	}
+	return fmt.Sprintf("npm 의존성 변경 %d건이 감지되었습니다.", changeCount)
+}
+
+func localizeSummaryTransitive(count int, lang string) string {
+	if lang == "en" {
+		return fmt.Sprintf("%d newly added transitive dependencies were detected.", count)
+	}
+	return fmt.Sprintf("새롭게 추가된 전이 의존성 %d건이 감지되었습니다.", count)
+}
+
+func localizeSummaryFallback(lang string) string {
+	if lang == "en" {
+		return "Dependency Review was unavailable, so lockfile-only fallback analysis was used."
+	}
+	return "Dependency Review를 사용할 수 없어 lockfile-only fallback 분석을 사용했습니다."
+}
+
+func localizeSummarySources(names []string, lang string) string {
+	sortedNames := append([]string(nil), names...)
+	sort.Strings(sortedNames)
+	display := strings.Join(limitNames(sortedNames), ", ")
+	if lang == "en" {
+		if len(sortedNames) > 3 {
+			return fmt.Sprintf("Non-default dependency sources were detected in %d packages, including %s.", len(sortedNames), display)
+		}
+		return fmt.Sprintf("Non-default dependency sources were detected for %s.", display)
+	}
+	if len(sortedNames) > 3 {
+		return fmt.Sprintf("기본 레지스트리 외 소스가 %d개 패키지에서 감지되었고 예시는 %s 입니다.", len(sortedNames), display)
+	}
+	return fmt.Sprintf("기본 레지스트리 외 소스가 %s 에서 감지되었습니다.", display)
+}
+
+func localizeSummaryDrivers(drivers []string, lang string) string {
+	labels := make([]string, 0, len(drivers))
+	for _, driver := range drivers {
+		labels = append(labels, localizeDriverLabel(driver, lang))
+	}
+	labels = limitNames(labels)
+	if lang == "en" {
+		return fmt.Sprintf("Top risk signals: %s.", strings.Join(labels, ", "))
+	}
+	return fmt.Sprintf("주요 위험 신호: %s.", strings.Join(labels, ", "))
+}
+
+func localizeDriverLabel(driver, lang string) string {
+	if lang == "en" {
+		switch driver {
+		case analysis.DriverKnownVulnerabilities:
+			return "known vulnerabilities"
+		case analysis.DriverAddedDirectRuntime:
+			return "direct runtime addition"
+		case analysis.DriverAddedDirectDev:
+			return "direct dev addition"
+		case analysis.DriverMajorVersionBump:
+			return "major version bump"
+		case analysis.DriverRecentlyPublished:
+			return "recently published version"
+		case analysis.DriverInstallScript:
+			return "install script"
+		case analysis.DriverPlatformRestricted:
+			return "platform restriction"
+		case analysis.DriverTransitiveFive:
+			return "5+ transitive additions"
+		case analysis.DriverTransitiveFifteen:
+			return "15+ transitive additions"
+		default:
+			return driver
+		}
+	}
+
+	switch driver {
+	case analysis.DriverKnownVulnerabilities:
+		return "알려진 취약점"
+	case analysis.DriverAddedDirectRuntime:
+		return "직접 런타임 추가"
+	case analysis.DriverAddedDirectDev:
+		return "직접 개발 의존성 추가"
+	case analysis.DriverMajorVersionBump:
+		return "메이저 버전 변경"
+	case analysis.DriverRecentlyPublished:
+		return "최근 배포 버전"
+	case analysis.DriverInstallScript:
+		return "설치 스크립트"
+	case analysis.DriverPlatformRestricted:
+		return "플랫폼 제약"
+	case analysis.DriverTransitiveFive:
+		return "전이 의존성 5+"
+	case analysis.DriverTransitiveFifteen:
+		return "전이 의존성 15+"
+	default:
+		return driver
+	}
+}
+
+func limitNames(values []string) []string {
+	if len(values) <= 3 {
+		return values
+	}
+	return values[:3]
 }

@@ -103,7 +103,7 @@ func Analyze(input Input, publishedAt map[PackageVersion]time.Time) AnalysisResu
 			notes = append(notes, Note{
 				Code:       NoteNonRegistrySource,
 				Dependency: candidate.Name,
-				Detail:     candidate.Resolved,
+				Detail:     npm.DescribeSource(candidate.Resolved),
 			})
 		}
 		changes = append(changes, change)

@@ -1,37 +1,63 @@
 # gh-dep-risk
 
-`gh-dep-risk` is a precompiled GitHub CLI extension that reviewers run on demand to summarize npm dependency risk in pull requests. It is a CLI extension instead of a server so the workflow stays local, uses existing `gh` authentication, does not require webhooks or background infrastructure, and can be invoked exactly when a reviewer wants an opinionated dependency summary.
+`gh-dep-risk` is a precompiled GitHub CLI extension that reviewers run on demand to summarize npm dependency risk in pull requests.
+
+It is a GitHub CLI extension instead of a server so the workflow stays local to the reviewer, reuses existing `gh` authentication, avoids webhooks and background infrastructure, and runs only when someone explicitly asks for a dependency-risk summary.
 
 ## Scope
 
 - npm-only MVP
 - supported manifests: `package.json`, `package-lock.json`
-- one Go binary, no server, no dashboard, no webhook receiver
-- dependency review API first, lockfile-only fallback when the API is unavailable
+- one Go binary
+- no server, webhook receiver, GitHub App, queue, database, or dashboard
+- dependency review API first, lockfile-only fallback when dependency review is unavailable
 
 ## Install
 
-1. Authenticate GitHub CLI:
+### Authenticate first
 
 ```bash
 gh auth login
 ```
 
-2. Install locally from the repository root:
+`go-gh` also respects:
+
+- `GH_TOKEN`
+- `GITHUB_TOKEN`
+- `GH_HOST`
+- `GH_REPO`
+
+`GH_REPO=OWNER/REPO` is useful outside a git checkout. `GH_HOST` is useful for GitHub Enterprise.
+
+### Install from a remote repository
+
+```bash
+gh extension install OWNER/gh-dep-risk
+```
+
+Upgrade later with:
+
+```bash
+gh extension upgrade dep-risk
+```
+
+### Install locally from this repo
+
+Linux or macOS:
 
 ```bash
 go build -o gh-dep-risk .
 gh extension install .
 ```
 
-On Windows, build `gh-dep-risk.exe` instead:
+Windows PowerShell:
 
 ```powershell
 go build -o gh-dep-risk.exe .
 gh extension install .
 ```
 
-You can also provide credentials with `GH_TOKEN` and pin the repository context with `GH_REPO=OWNER/REPO`.
+This repo does not install itself automatically. Build the binary at the repository root first, then run `gh extension install .` manually.
 
 ## Usage
 
@@ -41,14 +67,17 @@ gh dep-risk pr https://github.com/OWNER/REPO/pull/123
 gh dep-risk pr --format json
 gh dep-risk pr --comment
 gh dep-risk pr --fail-level high
+gh dep-risk version
 ```
 
-### Command summary
+## Command shape
 
 - `gh dep-risk pr [<number>|<url>]`
 - `gh dep-risk version`
 
-### Flags
+If the PR argument is omitted, `gh dep-risk pr` resolves the PR for the current branch.
+
+## Flags
 
 - `--repo owner/repo`
 - `--format human|json|markdown`
@@ -57,19 +86,38 @@ gh dep-risk pr --fail-level high
 - `--fail-level low|medium|high|critical|none`
 - `--no-registry`
 
-### Authentication
+## Output formats
 
-- `gh auth login` is the default path.
-- `GH_TOKEN` or `GITHUB_TOKEN` also work through `go-gh`.
-- `GH_REPO` overrides repository detection when you are not inside a git checkout.
+- `human`: concise reviewer-oriented summary
+- `json`: stable machine-readable schema with repo, PR metadata, score, level, blast radius, dependency-review availability, summary bullets, recommended actions, notes, and detailed changes
+- `markdown`: comment-ready output that always starts with `<!-- gh-dep-risk -->`
+
+Korean is the default language. Use `--lang en` for English.
 
 ## Behavior
 
-The command resolves the current pull request when no PR argument is supplied. It fetches PR metadata, changed files, dependency review data, and the base/head `package.json` plus `package-lock.json`.
+`gh dep-risk pr` resolves the repository from `GH_REPO` or the current git remote, fetches PR metadata, lists changed files, requests dependency review data for `{base}...{head}`, and reads base/head `package.json` plus `package-lock.json`.
 
-If the dependency review API returns `403` or `404`, `gh-dep-risk` falls back to lockfile-only analysis and marks `dependency_review_available=false`. Registry publish-age lookups are best effort and are skipped with `--no-registry`.
+If dependency review returns `403` or `404`, `gh-dep-risk` falls back to lockfile-only analysis and explicitly reports `dependency_review_available=false`. Registry publish-age lookups are best effort and are skipped with `--no-registry`.
 
-`--comment` manages exactly one timeline comment owned by the authenticated user. The marker is `<!-- gh-dep-risk -->`. If duplicates owned by the current user exist, the newest is updated and older duplicates are deleted. Comments from other authors are never edited or deleted.
+If there is no meaningful npm manifest or lockfile dependency change, the command exits with code `2`.
+
+### Comment upsert rules
+
+`--comment` uses PR timeline issue comments, not review comments.
+
+The marker comment is:
+
+```html
+<!-- gh-dep-risk -->
+```
+
+Behavior:
+
+- exactly one marker comment owned by the authenticated user is maintained
+- if multiple own marker comments exist, the newest is updated and older own duplicates are deleted
+- another author's marker comment is never edited or deleted
+- if another author already has a marker comment, `gh-dep-risk` warns on stderr and only manages the current user's own comment
 
 ## Exit codes
 
@@ -84,12 +132,29 @@ If the dependency review API returns `403` or `404`, `gh-dep-risk` falls back to
 ```bash
 go test ./...
 go build -o gh-dep-risk .
-gh extension install .
-gh dep-risk version
+./gh-dep-risk version
 ```
 
-On Windows, replace the binary name with `gh-dep-risk.exe`.
+Windows PowerShell:
+
+```powershell
+go test ./...
+go build -o gh-dep-risk.exe .
+.\gh-dep-risk.exe version
+```
+
+Local extension install remains manual:
+
+```bash
+gh extension install .
+```
 
 ## Release
 
-Push a `v*` tag to trigger `.github/workflows/release.yml`. The workflow uses `cli/gh-extension-precompile@v2` to publish precompiled binaries.
+Push a `v*` tag to trigger `.github/workflows/release.yml`.
+
+The release workflow:
+
+- runs `go test ./...`
+- uses `cli/gh-extension-precompile@v2`
+- publishes precompiled binaries for GitHub CLI extension installs

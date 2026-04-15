@@ -136,6 +136,9 @@ func (c *APIClient) ResolveCurrentPR(ctx context.Context, repo Repo) (int, error
 		if message == "" {
 			message = err.Error()
 		}
+		if isAuthMessage(message) {
+			return 0, AuthError{Op: "resolve current PR", Err: fmt.Errorf("%s", message)}
+		}
 		return 0, fmt.Errorf("resolve current PR: %s", message)
 	}
 
@@ -418,7 +421,7 @@ func classifyAuthError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if IsHTTPStatus(err, 401) {
+	if IsHTTPStatus(err, 401) || IsHTTPStatus(err, 403) || isAuthMessage(err.Error()) {
 		return AuthError{Op: "GitHub request", Err: err}
 	}
 	return err
@@ -442,10 +445,7 @@ func IsDependencyReviewUnavailable(err error) bool {
 	if err == nil {
 		return false
 	}
-	if IsHTTPStatus(err, 403) || IsHTTPStatus(err, 404) {
-		return true
-	}
-	return !IsPermissionError(err)
+	return IsHTTPStatus(err, 403) || IsHTTPStatus(err, 404)
 }
 
 func UpsertMarkerComment(ctx context.Context, client Client, repo Repo, issueNumber int, viewerLogin string, body string, stderr io.Writer) error {
@@ -509,4 +509,24 @@ func UpsertMarkerComment(ctx context.Context, client Client, repo Repo, issueNum
 		}
 	}
 	return nil
+}
+
+func isAuthMessage(message string) bool {
+	lower := strings.ToLower(message)
+	for _, candidate := range []string{
+		"authentication token not found",
+		"gh auth login",
+		"not logged into any github hosts",
+		"authentication required",
+		"requires authentication",
+		"http 401",
+		"http 403",
+		"insufficient permissions",
+		"resource not accessible",
+	} {
+		if strings.Contains(lower, candidate) {
+			return true
+		}
+	}
+	return false
 }

@@ -67,7 +67,8 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 	if err != nil {
 		return wrapGitHubError(err)
 	}
-	if _, err := deps.GitHub.ListPullRequestFiles(ctx, repo, prNumber); err != nil {
+	files, err := deps.GitHub.ListPullRequestFiles(ctx, repo, prNumber)
+	if err != nil {
 		return wrapGitHubError(err)
 	}
 
@@ -80,6 +81,10 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 		} else {
 			return wrapGitHubError(err)
 		}
+	}
+	npmReviewChanges := toReviewChanges(reviewChanges)
+	if !hasSupportedFileChanges(files) && len(npmReviewChanges) == 0 {
+		return &ExitError{Code: 2, Err: errors.New("no supported npm dependency change found")}
 	}
 
 	basePackageJSON, err := fetchOptionalFile(ctx, deps.GitHub, repo, "package.json", pr.BaseSHA)
@@ -119,7 +124,7 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 	input := analysis.Input{
 		Now:                       time.Now().UTC(),
 		DependencyReviewAvailable: dependencyReviewAvailable,
-		ReviewChanges:             toReviewChanges(reviewChanges),
+		ReviewChanges:             npmReviewChanges,
 		BaseManifest:              baseManifest,
 		HeadManifest:              headManifest,
 		BaseLockfile:              baseLockfile,
@@ -219,6 +224,12 @@ func parsePRArg(arg string) (ghclient.Repo, int, bool, error) {
 	if err != nil {
 		return ghclient.Repo{}, 0, false, fmt.Errorf("invalid PR argument %q", arg)
 	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ghclient.Repo{}, 0, false, fmt.Errorf("unsupported PR URL %q", arg)
+	}
+	if parsed.Host == "" {
+		return ghclient.Repo{}, 0, false, fmt.Errorf("unsupported PR URL %q", arg)
+	}
 	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
 	if len(parts) < 4 || parts[2] != "pull" {
 		return ghclient.Repo{}, 0, false, fmt.Errorf("unsupported PR URL %q", arg)
@@ -282,4 +293,13 @@ func wrapGitHubError(err error) error {
 		return &ExitError{Code: 4, Err: err}
 	}
 	return &ExitError{Code: 1, Err: err}
+}
+
+func hasSupportedFileChanges(files []ghclient.PullRequestFile) bool {
+	for _, file := range files {
+		if file.Filename == "package.json" || file.Filename == "package-lock.json" {
+			return true
+		}
+	}
+	return false
 }

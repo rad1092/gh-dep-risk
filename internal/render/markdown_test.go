@@ -46,7 +46,7 @@ func TestRenderMarkdown(t *testing.T) {
 		t.Fatalf("expected marker comment prefix")
 	}
 	if !strings.Contains(output, "영향 범위") {
-		t.Fatalf("expected korean labels")
+		t.Fatalf("expected korean labels in markdown output")
 	}
 	if !strings.Contains(output, "`npm ls left-pad`") {
 		t.Fatalf("expected quick command")

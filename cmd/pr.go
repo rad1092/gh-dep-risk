@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"gh-dep-risk/internal/analysis"
 	"gh-dep-risk/internal/app"
@@ -25,15 +27,12 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 	fs.BoolVar(&opts.Comment, "comment", false, "upsert a PR timeline comment")
 	fs.StringVar(&failLevel, "fail-level", string(analysis.RiskLevelNone), "fail threshold: low|medium|high|critical|none")
 	fs.BoolVar(&opts.NoRegistry, "no-registry", false, "skip npm registry lookups")
-	fs.Usage = func() {
-		fmt.Fprintln(stderr, "Usage:")
-		fmt.Fprintln(stderr, "  gh dep-risk pr [<number>|<url>] [flags]")
-		fmt.Fprintln(stderr)
-		fmt.Fprintln(stderr, "Flags:")
-		fs.PrintDefaults()
-	}
+	fs.Usage = func() { printPRUsage(stderr) }
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 1
 	}
 	if fs.NArg() > 1 {
@@ -53,6 +52,13 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 	opts.FailLevel = level
 	if opts.Lang != "ko" && opts.Lang != "en" {
 		fmt.Fprintf(stderr, "unsupported lang %q\n", opts.Lang)
+		return 1
+	}
+	opts.Format = strings.ToLower(opts.Format)
+	switch opts.Format {
+	case "human", "json", "markdown":
+	default:
+		fmt.Fprintf(stderr, "unsupported format %q\n", opts.Format)
 		return 1
 	}
 
@@ -75,4 +81,30 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 		fmt.Fprintln(stderr, exitErr.Err)
 	}
 	return exitErr.Code
+}
+
+func printPRUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "  gh dep-risk pr [<number>|<url>] [flags]")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Examples:")
+	fmt.Fprintln(w, "  gh dep-risk pr 123")
+	fmt.Fprintln(w, "  gh dep-risk pr https://github.com/OWNER/REPO/pull/123")
+	fmt.Fprintln(w, "  gh dep-risk pr --format json")
+	fmt.Fprintln(w, "  gh dep-risk pr --comment")
+	fmt.Fprintln(w, "  gh dep-risk pr --fail-level high")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Flags:")
+	fmt.Fprintln(w, "  -repo string")
+	fmt.Fprintln(w, "    \trepository in OWNER/REPO form")
+	fmt.Fprintln(w, "  -format string")
+	fmt.Fprintln(w, "    \toutput format: human|json|markdown (default \"human\")")
+	fmt.Fprintln(w, "  -lang string")
+	fmt.Fprintln(w, "    \toutput language: ko|en (default \"ko\")")
+	fmt.Fprintln(w, "  -comment")
+	fmt.Fprintln(w, "    \tupsert a PR timeline comment")
+	fmt.Fprintln(w, "  -fail-level string")
+	fmt.Fprintln(w, "    \tfail threshold: low|medium|high|critical|none (default \"none\")")
+	fmt.Fprintln(w, "  -no-registry")
+	fmt.Fprintln(w, "    \tskip npm registry lookups")
 }

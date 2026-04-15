@@ -75,3 +75,18 @@ func TestAddedTransitiveCountOnlyCountsNewPaths(t *testing.T) {
 		t.Fatalf("expected only newly added transitive paths to count, got %d", count)
 	}
 }
+
+func TestDetectSourceKind(t *testing.T) {
+	tests := map[string]SourceKind{
+		"https://registry.npmjs.org/left-pad/-/left-pad-1.0.0.tgz": SourceDefaultRegistry,
+		"https://npm.pkg.github.com/download/pkg.tgz":              SourceOtherRegistry,
+		"git+https://github.com/npm/cli.git":                       SourceGit,
+		"file:../local-package":                                    SourceUnknown,
+	}
+
+	for resolved, expected := range tests {
+		if actual := DetectSourceKind(resolved); actual != expected {
+			t.Fatalf("expected %q to be %s, got %s", resolved, expected, actual)
+		}
+	}
+}

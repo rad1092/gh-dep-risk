@@ -17,6 +17,13 @@ func renderMarkdown(report Report, lang string) string {
 	fmt.Fprintf(&b, "- %s: `%s`\n", tr("blast_radius"), report.Analysis.BlastRadius)
 	fmt.Fprintf(&b, "- %s: `%t`\n", tr("dependency_review"), report.Analysis.DependencyReviewAvailable)
 
+	b.WriteString("\n### ")
+	b.WriteString(tr("summary"))
+	b.WriteString("\n")
+	for _, line := range summaryBullets(report, lang) {
+		fmt.Fprintf(&b, "- %s\n", line)
+	}
+
 	if len(report.Analysis.Notes) > 0 {
 		b.WriteString("\n### ")
 		b.WriteString(tr("notes"))
@@ -26,35 +33,43 @@ func renderMarkdown(report Report, lang string) string {
 		}
 	}
 
-	b.WriteString("\n### ")
-	b.WriteString(tr("what_changed"))
-	b.WriteString("\n")
-	for _, change := range report.Analysis.ChangedDependencies {
-		fmt.Fprintf(&b, "- `%s` (%s/%s, score `%d`)\n", displayChange(change), change.ChangeType, change.Scope, change.Score)
-		for _, driver := range localizeDrivers(change.RiskDrivers, lang) {
-			fmt.Fprintf(&b, "  - %s\n", driver)
+	if len(report.Analysis.ChangedDependencies) > 0 {
+		b.WriteString("\n### ")
+		b.WriteString(tr("what_changed"))
+		b.WriteString("\n")
+		for _, change := range report.Analysis.ChangedDependencies {
+			fmt.Fprintf(&b, "- `%s` (%s/%s, score `%d`)\n", displayChange(change), change.ChangeType, change.Scope, change.Score)
+			for _, driver := range localizeDrivers(change.RiskDrivers, lang) {
+				fmt.Fprintf(&b, "  - %s\n", driver)
+			}
 		}
 	}
 
-	b.WriteString("\n### ")
-	b.WriteString(tr("why_risky"))
-	b.WriteString("\n")
-	for _, driver := range localizeDrivers(report.Analysis.RiskDrivers, lang) {
-		fmt.Fprintf(&b, "- %s\n", driver)
+	if len(report.Analysis.RiskDrivers) > 0 {
+		b.WriteString("\n### ")
+		b.WriteString(tr("why_risky"))
+		b.WriteString("\n")
+		for _, driver := range localizeDrivers(report.Analysis.RiskDrivers, lang) {
+			fmt.Fprintf(&b, "- %s\n", driver)
+		}
 	}
 
-	b.WriteString("\n### ")
-	b.WriteString(tr("recommended_actions"))
-	b.WriteString("\n")
-	for _, action := range report.Analysis.RecommendedActions {
-		fmt.Fprintf(&b, "- %s\n", localizeAction(action, lang))
+	if len(report.Analysis.RecommendedActions) > 0 {
+		b.WriteString("\n### ")
+		b.WriteString(tr("recommended_actions"))
+		b.WriteString("\n")
+		for _, action := range report.Analysis.RecommendedActions {
+			fmt.Fprintf(&b, "- %s\n", localizeAction(action, lang))
+		}
 	}
 
-	b.WriteString("\n### ")
-	b.WriteString(tr("quick_commands"))
-	b.WriteString("\n")
-	for _, command := range report.Analysis.QuickCommands {
-		fmt.Fprintf(&b, "- `%s`\n", command)
+	if len(report.Analysis.QuickCommands) > 0 {
+		b.WriteString("\n### ")
+		b.WriteString(tr("quick_commands"))
+		b.WriteString("\n")
+		for _, command := range report.Analysis.QuickCommands {
+			fmt.Fprintf(&b, "- `%s`\n", command)
+		}
 	}
 
 	return b.String() + "\n"

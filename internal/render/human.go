@@ -16,7 +16,13 @@ func renderHuman(report Report, lang string) string {
 	fmt.Fprintf(&b, "%s: %d (%s)\n", tr("score"), report.Analysis.Score, report.Analysis.Level)
 	fmt.Fprintf(&b, "%s: %s\n", tr("blast_radius"), report.Analysis.BlastRadius)
 	fmt.Fprintf(&b, "%s: %t\n", tr("dependency_review"), report.Analysis.DependencyReviewAvailable)
-	fmt.Fprintf(&b, "%s: %d\n", tr("changed_deps"), len(report.Analysis.ChangedDependencies))
+
+	b.WriteString("\n")
+	b.WriteString(tr("summary"))
+	b.WriteString(":\n")
+	for _, line := range summaryBullets(report, lang) {
+		fmt.Fprintf(&b, "- %s\n", line)
+	}
 
 	if len(report.Analysis.Notes) > 0 {
 		b.WriteString("\n")
@@ -27,11 +33,16 @@ func renderHuman(report Report, lang string) string {
 		}
 	}
 
-	b.WriteString("\n")
-	b.WriteString(tr("what_changed"))
-	b.WriteString(":\n")
-	for _, change := range report.Analysis.ChangedDependencies {
-		fmt.Fprintf(&b, "- %s [%s/%s] score=%d drivers=%s\n", displayChange(change), change.ChangeType, change.Scope, change.Score, strings.Join(localizeDrivers(change.RiskDrivers, lang), ", "))
+	if len(report.Analysis.ChangedDependencies) > 0 {
+		b.WriteString("\n")
+		b.WriteString(tr("what_changed"))
+		b.WriteString(":\n")
+		for _, change := range report.Analysis.ChangedDependencies {
+			fmt.Fprintf(&b, "- %s [%s/%s] score=%d\n", displayChange(change), change.ChangeType, change.Scope, change.Score)
+			if len(change.RiskDrivers) > 0 {
+				fmt.Fprintf(&b, "  %s: %s\n", tr("risk_signals"), strings.Join(localizeDrivers(change.RiskDrivers, lang), ", "))
+			}
+		}
 	}
 
 	if len(report.Analysis.RecommendedActions) > 0 {

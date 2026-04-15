@@ -27,6 +27,15 @@ type LockPackage struct {
 	Dependencies     map[string]string
 }
 
+type SourceKind string
+
+const (
+	SourceDefaultRegistry SourceKind = "default_registry"
+	SourceOtherRegistry   SourceKind = "other_registry"
+	SourceGit             SourceKind = "git"
+	SourceUnknown         SourceKind = "unknown"
+)
+
 func ParseLockfile(data []byte) (*Lockfile, error) {
 	if len(data) == 0 {
 		return nil, nil
@@ -243,12 +252,35 @@ func MajorVersion(version string) (int, bool) {
 }
 
 func IsRegistrySource(resolved string) bool {
+	return DetectSourceKind(resolved) == SourceDefaultRegistry
+}
+
+func DetectSourceKind(resolved string) SourceKind {
 	if resolved == "" {
-		return true
+		return SourceDefaultRegistry
 	}
 	lower := strings.ToLower(resolved)
 	if strings.HasPrefix(lower, "git+") || strings.HasPrefix(lower, "git://") || strings.HasPrefix(lower, "github:") {
-		return false
+		return SourceGit
 	}
-	return strings.Contains(lower, "registry.npmjs.org")
+	if strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") {
+		if strings.Contains(lower, "registry.npmjs.org") {
+			return SourceDefaultRegistry
+		}
+		return SourceOtherRegistry
+	}
+	return SourceUnknown
+}
+
+func DescribeSource(resolved string) string {
+	switch DetectSourceKind(resolved) {
+	case SourceGit:
+		return "git source: " + resolved
+	case SourceOtherRegistry:
+		return "non-default registry: " + resolved
+	case SourceUnknown:
+		return "non-default source: " + resolved
+	default:
+		return resolved
+	}
 }
