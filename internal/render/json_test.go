@@ -38,6 +38,27 @@ func TestRenderJSONStableSchema(t *testing.T) {
 			RecommendedActions: []string{analysis.ActionReviewChangelog},
 			QuickCommands:      []string{"npm ls left-pad"},
 			Notes:              []analysis.Note{{Code: analysis.NoteDependencyReviewFallback}},
+			Targets: []analysis.TargetAnalysisResult{
+				{
+					Target:                    analysis.AnalysisTarget{DisplayName: "root", ManifestPath: "package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindRoot},
+					DependencyReviewAvailable: false,
+					Score:                     48,
+					Level:                     analysis.RiskLevelHigh,
+					BlastRadius:               analysis.BlastRadiusMedium,
+					ChangedDependencies: []analysis.DependencyChange{
+						{
+							Name:        "left-pad",
+							Target:      "root",
+							ChangeType:  analysis.ChangeUpdated,
+							Scope:       analysis.ScopeRuntime,
+							Score:       48,
+							RiskDrivers: []string{analysis.DriverMajorVersionBump},
+							FromVersion: "1.0.0",
+							ToVersion:   "2.0.0",
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -69,6 +90,9 @@ func TestRenderJSONStableSchema(t *testing.T) {
 	}
 	if len(payload.Summary) == 0 || len(payload.Changes) != 1 {
 		t.Fatalf("expected summary and detailed changes in payload: %#v", payload)
+	}
+	if len(payload.Targets) != 1 || payload.Targets[0].Target.DisplayName != "root" {
+		t.Fatalf("expected stable targets array, got %#v", payload.Targets)
 	}
 	if len(payload.RecommendedActions) != 1 || payload.RecommendedActions[0] != analysis.ActionReviewChangelog {
 		t.Fatalf("unexpected recommended actions: %#v", payload.RecommendedActions)

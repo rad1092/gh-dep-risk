@@ -65,6 +65,9 @@ This repo does not install itself automatically. Build the binary at the reposit
 gh dep-risk pr 123
 gh dep-risk pr https://github.com/OWNER/REPO/pull/123
 gh dep-risk pr --format json
+gh dep-risk pr 123 --list-targets
+gh dep-risk pr 123 --path apps/web
+gh dep-risk pr 123 --path package.json --comment
 gh dep-risk pr --bundle-dir ./dep-risk-bundle
 gh dep-risk pr --comment
 gh dep-risk pr --fail-level high
@@ -87,11 +90,13 @@ If the PR argument is omitted, `gh dep-risk pr` resolves the PR for the current 
 - `--fail-level low|medium|high|critical|none`
 - `--no-registry`
 - `--bundle-dir <dir>`
+- `--path <repo-relative-dir-or-package.json>` repeatable
+- `--list-targets`
 
 ## Output formats
 
 - `human`: concise reviewer-oriented summary
-- `json`: stable machine-readable schema with repo, PR metadata, score, level, blast radius, dependency-review availability, summary bullets, recommended actions, notes, and detailed changes
+- `json`: stable machine-readable schema with repo, PR metadata, score, level, blast radius, dependency-review availability, summary bullets, recommended actions, notes, detailed changes, and a `targets` array
 - `markdown`: comment-ready output that always starts with `<!-- gh-dep-risk -->`
 
 Korean is the default language. Use `--lang en` for English.
@@ -103,9 +108,46 @@ Korean is the default language. Use `--lang en` for English.
 - `dep-risk.md`
 - `metadata.json`
 
+When multiple npm targets are analyzed, the same bundle also includes per-target files under:
+
+- `targets/<safe-target-name>/dep-risk.json`
+- `targets/<safe-target-name>/dep-risk.md`
+
+`metadata.json` includes the detected targets, target count, overall score, level, blast radius, and `dependency_review_available`.
+
 ## Behavior
 
-`gh dep-risk pr` resolves the repository from `GH_REPO` or the current git remote, fetches PR metadata, lists changed files, requests dependency review data for `{base}...{head}`, and reads base/head `package.json` plus `package-lock.json`.
+`gh dep-risk pr` resolves the repository from `GH_REPO` or the current git remote, fetches PR metadata, lists changed files, discovers supported npm targets from the base/head repository trees, and analyzes only the changed targets unless `--path` narrows the set explicitly.
+
+Supported target shapes:
+
+- repo root projects with `package.json` and `package-lock.json`
+- npm workspaces with a shared root `package-lock.json`
+- nested standalone subprojects with their own `package.json` and `package-lock.json`
+
+### npm monorepos and workspaces
+
+Default behavior:
+
+- if one supported npm target changed, `gh-dep-risk` analyzes that target
+- if multiple supported targets changed, `gh-dep-risk` analyzes all of them once and produces one aggregate result plus per-target detail
+- if no supported npm target changed, the command exits with code `2`
+
+Useful commands:
+
+```bash
+gh dep-risk pr 123 --list-targets
+gh dep-risk pr 123 --path apps/web
+gh dep-risk pr 123 --path package.json --comment
+gh dep-risk pr 123 --bundle-dir ./out
+```
+
+Notes:
+
+- `--path` accepts either a directory or a `package.json` path and can be repeated
+- `--list-targets` prints detected targets and exits without running analysis
+- npm workspaces reuse the shared root `package-lock.json`; per-workspace attribution is best effort and is called out in notes when lockfile-only changes cannot be mapped exactly
+- npm-only remains the current limit; pnpm and yarn are intentionally out of scope
 
 If dependency review returns `403` or `404`, `gh-dep-risk` falls back to lockfile-only analysis and explicitly reports `dependency_review_available=false`. Registry publish-age lookups are best effort and are skipped with `--no-registry`.
 
@@ -189,7 +231,7 @@ Each manual run:
 
 - builds and tests the current repo
 - runs `gh-dep-risk` once
-- uploads a bundle artifact containing `dep-risk-human.txt`, `dep-risk.json`, `dep-risk.md`, and `metadata.json`
+- uploads a bundle artifact containing the aggregate files plus any per-target bundle files
 - appends the markdown report to the workflow job summary
 
 Find the artifact and step summary on the workflow run page.

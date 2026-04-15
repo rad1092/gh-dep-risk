@@ -29,11 +29,27 @@ func renderHuman(report Report, lang string) string {
 		b.WriteString(tr("notes"))
 		b.WriteString(":\n")
 		for _, note := range report.Analysis.Notes {
-			fmt.Fprintf(&b, "- %s\n", localizeNote(note, lang))
+			fmt.Fprintf(&b, "- %s\n", localizeNoteMessage(note, lang))
 		}
 	}
 
-	if len(report.Analysis.ChangedDependencies) > 0 {
+	if len(report.Analysis.Targets) > 0 {
+		b.WriteString("\n")
+		b.WriteString(targetSectionTitle(lang))
+		b.WriteString(":\n")
+		for _, target := range report.Analysis.Targets {
+			fmt.Fprintf(&b, "- %s [%s] score=%d (%s), blast=%s\n", displayTarget(target.Target), target.Target.Kind, target.Score, target.Level, target.BlastRadius)
+			for _, change := range target.ChangedDependencies {
+				fmt.Fprintf(&b, "  %s [%s/%s] score=%d\n", displayChange(change), change.ChangeType, change.Scope, change.Score)
+				if len(change.RiskDrivers) > 0 {
+					fmt.Fprintf(&b, "    %s: %s\n", tr("risk_signals"), strings.Join(localizeDrivers(change.RiskDrivers, lang), ", "))
+				}
+			}
+			for _, note := range target.Notes {
+				fmt.Fprintf(&b, "  %s: %s\n", tr("notes"), localizeNoteMessage(note, lang))
+			}
+		}
+	} else if len(report.Analysis.ChangedDependencies) > 0 {
 		b.WriteString("\n")
 		b.WriteString(tr("what_changed"))
 		b.WriteString(":\n")

@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -25,6 +26,14 @@ const (
 	BlastRadiusLow    BlastRadius = "low"
 	BlastRadiusMedium BlastRadius = "medium"
 	BlastRadiusHigh   BlastRadius = "high"
+)
+
+type TargetKind string
+
+const (
+	TargetKindRoot       TargetKind = "root"
+	TargetKindWorkspace  TargetKind = "workspace"
+	TargetKindStandalone TargetKind = "standalone"
 )
 
 type DependencyScope string
@@ -69,7 +78,31 @@ const (
 const (
 	NoteDependencyReviewFallback = "dependency_review_unavailable"
 	NoteNonRegistrySource        = "non_registry_source"
+	NoteApproximateAttribution   = "approximate_target_attribution"
 )
+
+type AnalysisTarget struct {
+	DisplayName       string     `json:"display_name"`
+	ManifestPath      string     `json:"manifest_path"`
+	LockfilePath      string     `json:"lockfile_path"`
+	Kind              TargetKind `json:"kind"`
+	WorkspaceRootPath string     `json:"workspace_root_path,omitempty"`
+}
+
+func (t AnalysisTarget) Directory() string {
+	if t.ManifestPath == "" || t.ManifestPath == "package.json" {
+		return ""
+	}
+	dir := path.Dir(t.ManifestPath)
+	if dir == "." {
+		return ""
+	}
+	return dir
+}
+
+func (t AnalysisTarget) Key() string {
+	return t.ManifestPath
+}
 
 type Vulnerability struct {
 	Severity string `json:"severity"`
@@ -100,6 +133,7 @@ type Note struct {
 type DependencyChange struct {
 	Name                 string          `json:"name"`
 	Manifest             string          `json:"manifest,omitempty"`
+	Target               string          `json:"target,omitempty"`
 	ChangeType           ChangeType      `json:"change_type"`
 	Scope                DependencyScope `json:"scope"`
 	Direct               bool            `json:"direct"`
@@ -116,6 +150,21 @@ type DependencyChange struct {
 }
 
 type AnalysisResult struct {
+	DependencyReviewAvailable bool                   `json:"dependency_review_available"`
+	Score                     int                    `json:"score"`
+	Level                     RiskLevel              `json:"level"`
+	BlastRadius               BlastRadius            `json:"blast_radius"`
+	ChangedDependencies       []DependencyChange     `json:"changed_dependencies"`
+	RiskDrivers               []string               `json:"risk_drivers"`
+	RecommendedActions        []string               `json:"recommended_actions"`
+	QuickCommands             []string               `json:"quick_commands"`
+	Notes                     []Note                 `json:"notes,omitempty"`
+	AddedTransitiveCount      int                    `json:"added_transitive_count"`
+	Targets                   []TargetAnalysisResult `json:"targets,omitempty"`
+}
+
+type TargetAnalysisResult struct {
+	Target                    AnalysisTarget     `json:"target"`
 	DependencyReviewAvailable bool               `json:"dependency_review_available"`
 	Score                     int                `json:"score"`
 	Level                     RiskLevel          `json:"level"`
@@ -130,6 +179,7 @@ type AnalysisResult struct {
 
 type Input struct {
 	Now                       time.Time
+	Target                    AnalysisTarget
 	DependencyReviewAvailable bool
 	ReviewChanges             []ReviewChange
 	BaseManifest              *npm.PackageManifest
@@ -184,7 +234,8 @@ func LevelForScore(score int) RiskLevel {
 }
 
 func CollectRegistryTargets(input Input) []PackageVersion {
-	candidates := collectCandidateSummaries(input)
+	directNames := targetDirectNames(input)
+	candidates := collectCandidateSummaries(input, buildTargetLockViews(input, directNames), directNames)
 	seen := map[PackageVersion]struct{}{}
 	for _, candidate := range candidates {
 		if candidate.ToVersion == "" {

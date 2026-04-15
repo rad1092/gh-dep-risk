@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,14 +19,16 @@ import (
 )
 
 type RunPROptions struct {
-	PRArg      string
-	Repo       string
-	Format     string
-	Lang       string
-	BundleDir  string
-	Comment    bool
-	FailLevel  analysis.RiskLevel
-	NoRegistry bool
+	PRArg       string
+	Repo        string
+	Format      string
+	Lang        string
+	BundleDir   string
+	Comment     bool
+	FailLevel   analysis.RiskLevel
+	NoRegistry  bool
+	Paths       []string
+	ListTargets bool
 }
 
 type RunPRDependencies struct {
@@ -59,11 +63,6 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 		return wrapGitHubError(err)
 	}
 
-	viewerLogin, err := deps.GitHub.ViewerLogin(ctx, repo)
-	if err != nil {
-		return wrapGitHubError(err)
-	}
-
 	pr, err := deps.GitHub.GetPullRequest(ctx, repo, prNumber)
 	if err != nil {
 		return wrapGitHubError(err)
@@ -73,68 +72,67 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 		return wrapGitHubError(err)
 	}
 
-	dependencyReviewAvailable := true
-	reviewChanges, err := deps.GitHub.CompareDependencies(ctx, repo, pr.BaseSHA, pr.HeadSHA)
+	cache := newRepoDataCache(deps.GitHub, repo)
+	targets, err := discoverTargets(ctx, cache, pr.BaseSHA, pr.HeadSHA)
 	if err != nil {
-		if ghclient.IsDependencyReviewUnavailable(err) {
-			dependencyReviewAvailable = false
-			reviewChanges = nil
-		} else {
-			return wrapGitHubError(err)
-		}
+		return wrapGitHubError(err)
 	}
-	npmReviewChanges := toReviewChanges(reviewChanges)
-	if !hasSupportedFileChanges(files) && len(npmReviewChanges) == 0 {
+	if opts.ListTargets {
+		if _, err := io.WriteString(deps.Stdout, formatTargets(targets)); err != nil {
+			return &ExitError{Code: 1, Err: err}
+		}
+		return nil
+	}
+
+	selectedTargets, err := selectTargets(targets, files, opts.Paths)
+	if err != nil {
+		return &ExitError{Code: 1, Err: err}
+	}
+	if len(selectedTargets) == 0 {
 		return &ExitError{Code: 2, Err: errors.New("no supported npm dependency change found")}
 	}
 
-	basePackageJSON, err := fetchOptionalFile(ctx, deps.GitHub, repo, "package.json", pr.BaseSHA)
-	if err != nil {
-		return wrapGitHubError(err)
-	}
-	headPackageJSON, err := fetchOptionalFile(ctx, deps.GitHub, repo, "package.json", pr.HeadSHA)
-	if err != nil {
-		return wrapGitHubError(err)
-	}
-	basePackageLock, err := fetchOptionalFile(ctx, deps.GitHub, repo, "package-lock.json", pr.BaseSHA)
-	if err != nil {
-		return wrapGitHubError(err)
-	}
-	headPackageLock, err := fetchOptionalFile(ctx, deps.GitHub, repo, "package-lock.json", pr.HeadSHA)
-	if err != nil {
-		return wrapGitHubError(err)
-	}
+	now := time.Now().UTC()
+	inputs := make([]analysis.Input, 0, len(selectedTargets))
+	for _, target := range selectedTargets {
+		reviewChanges, dependencyReviewAvailable, err := compareTargetDependencies(ctx, deps.GitHub, repo, pr.BaseSHA, pr.HeadSHA, target)
+		if err != nil {
+			return wrapGitHubError(err)
+		}
 
-	baseManifest, err := npm.ParsePackageManifest(basePackageJSON)
-	if err != nil {
-		return &ExitError{Code: 1, Err: err}
-	}
-	headManifest, err := npm.ParsePackageManifest(headPackageJSON)
-	if err != nil {
-		return &ExitError{Code: 1, Err: err}
-	}
-	baseLockfile, err := npm.ParseLockfile(basePackageLock)
-	if err != nil {
-		return &ExitError{Code: 1, Err: err}
-	}
-	headLockfile, err := npm.ParseLockfile(headPackageLock)
-	if err != nil {
-		return &ExitError{Code: 1, Err: err}
-	}
+		baseManifest, err := cache.manifest(ctx, pr.BaseSHA, target.ManifestPath)
+		if err != nil {
+			return &ExitError{Code: 1, Err: err}
+		}
+		headManifest, err := cache.manifest(ctx, pr.HeadSHA, target.ManifestPath)
+		if err != nil {
+			return &ExitError{Code: 1, Err: err}
+		}
+		baseLockfile, err := cache.lockfile(ctx, pr.BaseSHA, target.LockfilePath)
+		if err != nil {
+			return &ExitError{Code: 1, Err: err}
+		}
+		headLockfile, err := cache.lockfile(ctx, pr.HeadSHA, target.LockfilePath)
+		if err != nil {
+			return &ExitError{Code: 1, Err: err}
+		}
 
-	input := analysis.Input{
-		Now:                       time.Now().UTC(),
-		DependencyReviewAvailable: dependencyReviewAvailable,
-		ReviewChanges:             npmReviewChanges,
-		BaseManifest:              baseManifest,
-		HeadManifest:              headManifest,
-		BaseLockfile:              baseLockfile,
-		HeadLockfile:              headLockfile,
+		inputs = append(inputs, analysis.Input{
+			Now:                       now,
+			Target:                    target,
+			DependencyReviewAvailable: dependencyReviewAvailable,
+			ReviewChanges:             reviewChanges,
+			BaseManifest:              baseManifest,
+			HeadManifest:              headManifest,
+			BaseLockfile:              baseLockfile,
+			HeadLockfile:              headLockfile,
+		})
 	}
 
 	publishedAt := map[analysis.PackageVersion]time.Time{}
 	if !opts.NoRegistry && deps.Registry != nil {
-		for _, target := range analysis.CollectRegistryTargets(input) {
+		registryTargets := collectRegistryTargets(inputs)
+		for _, target := range registryTargets {
 			published, err := deps.Registry.PublishedAt(ctx, target.Name, target.Version)
 			if err != nil {
 				continue
@@ -143,7 +141,18 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 		}
 	}
 
-	result := analysis.Analyze(input, publishedAt)
+	targetResults := make([]analysis.TargetAnalysisResult, 0, len(inputs))
+	for _, input := range inputs {
+		result := analysis.Analyze(input, publishedAt)
+		if !analysis.HasMeaningfulChange(result) {
+			continue
+		}
+		targetResults = append(targetResults, analysis.TargetResult(input.Target, result))
+	}
+	if len(targetResults) == 0 {
+		return &ExitError{Code: 2, Err: errors.New("no supported npm dependency change found")}
+	}
+	result := analysis.AggregateResults(targetResults)
 	if !analysis.HasMeaningfulChange(result) {
 		return &ExitError{Code: 2, Err: errors.New("no supported npm dependency change found")}
 	}
@@ -177,6 +186,10 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 	}
 
 	if opts.Comment {
+		viewerLogin, err := deps.GitHub.ViewerLogin(ctx, repo)
+		if err != nil {
+			return wrapGitHubError(err)
+		}
 		commentBody, err := render.Render(report, "markdown", opts.Lang)
 		if err != nil {
 			return &ExitError{Code: 1, Err: err}
@@ -252,24 +265,13 @@ func parsePRArg(arg string) (ghclient.Repo, int, bool, error) {
 	}, number, true, nil
 }
 
-func fetchOptionalFile(ctx context.Context, client ghclient.Client, repo ghclient.Repo, path, ref string) ([]byte, error) {
-	data, err := client.GetRepositoryFile(ctx, repo, path, ref)
-	if err != nil {
-		if errors.Is(err, ghclient.ErrNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return data, nil
-}
-
 func toReviewChanges(changes []ghclient.DependencyReviewChange) []analysis.ReviewChange {
 	result := make([]analysis.ReviewChange, 0, len(changes))
 	for _, change := range changes {
 		if change.Ecosystem != "npm" {
 			continue
 		}
-		if change.Manifest != "package.json" && change.Manifest != "package-lock.json" {
+		if !isSupportedManifestPath(change.Manifest) {
 			continue
 		}
 		vulns := make([]analysis.Vulnerability, 0, len(change.Vulnerabilities))
@@ -292,6 +294,37 @@ func toReviewChanges(changes []ghclient.DependencyReviewChange) []analysis.Revie
 	return result
 }
 
+func compareTargetDependencies(ctx context.Context, client ghclient.Client, repo ghclient.Repo, baseSHA, headSHA string, target analysis.AnalysisTarget) ([]analysis.ReviewChange, bool, error) {
+	reviewChanges, err := client.CompareDependenciesForManifest(ctx, repo, baseSHA, headSHA, target.ManifestPath)
+	if err != nil {
+		if ghclient.IsDependencyReviewUnavailable(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return toReviewChanges(reviewChanges), true, nil
+}
+
+func collectRegistryTargets(inputs []analysis.Input) []analysis.PackageVersion {
+	seen := map[analysis.PackageVersion]struct{}{}
+	for _, input := range inputs {
+		for _, target := range analysis.CollectRegistryTargets(input) {
+			seen[target] = struct{}{}
+		}
+	}
+	targets := make([]analysis.PackageVersion, 0, len(seen))
+	for target := range seen {
+		targets = append(targets, target)
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].Name == targets[j].Name {
+			return targets[i].Version < targets[j].Version
+		}
+		return targets[i].Name < targets[j].Name
+	})
+	return targets
+}
+
 func wrapGitHubError(err error) error {
 	if err == nil {
 		return nil
@@ -302,11 +335,11 @@ func wrapGitHubError(err error) error {
 	return &ExitError{Code: 1, Err: err}
 }
 
-func hasSupportedFileChanges(files []ghclient.PullRequestFile) bool {
-	for _, file := range files {
-		if file.Filename == "package.json" || file.Filename == "package-lock.json" {
-			return true
-		}
+func isSupportedManifestPath(manifestPath string) bool {
+	switch path.Base(strings.TrimSpace(manifestPath)) {
+	case "package.json", "package-lock.json":
+		return true
+	default:
+		return false
 	}
-	return false
 }

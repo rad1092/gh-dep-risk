@@ -3,6 +3,7 @@ package npm
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 )
@@ -25,6 +26,13 @@ type LockPackage struct {
 	OS               []string
 	CPU              []string
 	Dependencies     map[string]string
+}
+
+type TargetPackages struct {
+	Direct      map[string]LockPackage
+	All         map[string]LockPackage
+	Transitive  map[string]LockPackage
+	Approximate bool
 }
 
 type SourceKind string
@@ -216,6 +224,131 @@ func (l *Lockfile) AddedTransitiveCount(base *Lockfile, directNames map[string]s
 	return count
 }
 
+func (l *Lockfile) PackageAt(packagePath string) (LockPackage, bool) {
+	if l == nil {
+		return LockPackage{}, false
+	}
+	pkg, ok := l.Packages[cleanLockPath(packagePath)]
+	return pkg, ok
+}
+
+func (l *Lockfile) TargetRootDependencies(targetDir string) map[string]string {
+	if l == nil {
+		return map[string]string{}
+	}
+	if pkg, ok := l.PackageAt(targetDir); ok {
+		return cloneMap(pkg.Dependencies)
+	}
+	return map[string]string{}
+}
+
+func (l *Lockfile) ResolvePackage(basePath, name string) (LockPackage, bool, bool) {
+	if l == nil || strings.TrimSpace(name) == "" {
+		return LockPackage{}, false, false
+	}
+	for _, base := range resolutionBases(basePath) {
+		candidate := joinNodeModules(base, name)
+		if pkg, ok := l.Packages[candidate]; ok {
+			return pkg, true, false
+		}
+	}
+	packages := l.FindByName(name)
+	if len(packages) == 0 {
+		return LockPackage{}, false, false
+	}
+	return packages[0], true, true
+}
+
+func (l *Lockfile) CollectTargetPackages(targetDir string, directNames []string) TargetPackages {
+	result := TargetPackages{
+		Direct:     map[string]LockPackage{},
+		All:        map[string]LockPackage{},
+		Transitive: map[string]LockPackage{},
+	}
+	if l == nil {
+		return result
+	}
+
+	names := append([]string(nil), directNames...)
+	sort.Strings(names)
+	queue := make([]LockPackage, 0, len(names))
+	for _, name := range names {
+		pkg, ok, approximate := l.ResolvePackage(targetDir, name)
+		if !ok {
+			continue
+		}
+		if approximate {
+			result.Approximate = true
+		}
+		result.Direct[name] = pkg
+		if _, seen := result.All[pkg.Path]; seen {
+			continue
+		}
+		result.All[pkg.Path] = pkg
+		queue = append(queue, pkg)
+	}
+
+	for len(queue) > 0 {
+		pkg := queue[0]
+		queue = queue[1:]
+		for _, depName := range sortedDependencyNames(pkg.Dependencies) {
+			dep, ok, approximate := l.ResolvePackage(pkg.Path, depName)
+			if !ok {
+				continue
+			}
+			if approximate {
+				result.Approximate = true
+			}
+			if _, seen := result.All[dep.Path]; seen {
+				continue
+			}
+			result.All[dep.Path] = dep
+			queue = append(queue, dep)
+		}
+	}
+
+	for _, pkgPath := range sortedDependencyNames(pathsAsDependencyMap(l.Packages)) {
+		pkg := l.Packages[pkgPath]
+		if _, seen := result.All[pkg.Path]; seen {
+			continue
+		}
+		for existingPath := range result.All {
+			if strings.HasPrefix(pkg.Path, existingPath+"/node_modules/") {
+				result.All[pkg.Path] = pkg
+				break
+			}
+		}
+	}
+
+	directPaths := map[string]struct{}{}
+	for _, pkg := range result.Direct {
+		directPaths[pkg.Path] = struct{}{}
+	}
+	for pkgPath, pkg := range result.All {
+		if _, ok := directPaths[pkgPath]; ok {
+			continue
+		}
+		result.Transitive[pkgPath] = pkg
+	}
+	return result
+}
+
+func (l *Lockfile) AddedTransitiveCountForTarget(base *Lockfile, targetDir string, directNames []string) (int, bool) {
+	headView := l.CollectTargetPackages(targetDir, directNames)
+	if base == nil {
+		return len(headView.Transitive), headView.Approximate
+	}
+	baseView := base.CollectTargetPackages(targetDir, directNames)
+	count := 0
+	for pkgPath := range headView.Transitive {
+		if _, ok := baseView.Transitive[pkgPath]; ok {
+			continue
+		}
+		count++
+	}
+	return count, headView.Approximate || baseView.Approximate
+}
+
 func StripVersionPrefix(version string) string {
 	trimmed := strings.TrimSpace(version)
 	for len(trimmed) > 0 {
@@ -283,4 +416,79 @@ func DescribeSource(resolved string) string {
 	default:
 		return resolved
 	}
+}
+
+func cleanLockPath(value string) string {
+	cleaned := path.Clean(strings.TrimSpace(strings.ReplaceAll(value, "\\", "/")))
+	switch cleaned {
+	case ".", "/":
+		return ""
+	default:
+		return strings.TrimPrefix(cleaned, "./")
+	}
+}
+
+func sortedDependencyNames(deps map[string]string) []string {
+	names := make([]string, 0, len(deps))
+	for name := range deps {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func pathsAsDependencyMap(packages map[string]LockPackage) map[string]string {
+	paths := make(map[string]string, len(packages))
+	for pkgPath := range packages {
+		paths[pkgPath] = pkgPath
+	}
+	return paths
+}
+
+func joinNodeModules(basePath, name string) string {
+	cleanBase := cleanLockPath(basePath)
+	if cleanBase == "" {
+		return "node_modules/" + name
+	}
+	return cleanBase + "/node_modules/" + name
+}
+
+func resolutionBases(basePath string) []string {
+	current := cleanLockPath(basePath)
+	result := make([]string, 0, 8)
+	seen := map[string]struct{}{}
+	for {
+		if _, ok := seen[current]; !ok {
+			seen[current] = struct{}{}
+			result = append(result, current)
+		}
+		if current == "" {
+			break
+		}
+		if stripped, ok := stripLastNodeModulesSegment(current); ok {
+			current = stripped
+			continue
+		}
+		parent := path.Dir(current)
+		switch parent {
+		case ".", "/":
+			current = ""
+		default:
+			current = parent
+		}
+	}
+	return result
+}
+
+func stripLastNodeModulesSegment(value string) (string, bool) {
+	const marker = "/node_modules/"
+	cleaned := cleanLockPath(value)
+	index := strings.LastIndex(cleaned, marker)
+	if index < 0 {
+		if strings.HasPrefix(cleaned, "node_modules/") {
+			return "", true
+		}
+		return "", false
+	}
+	return strings.Trim(cleaned[:index], "/"), true
 }

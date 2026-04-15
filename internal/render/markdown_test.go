@@ -23,6 +23,7 @@ func TestRenderMarkdown(t *testing.T) {
 			ChangedDependencies: []analysis.DependencyChange{
 				{
 					Name:        "left-pad",
+					Target:      "root",
 					ChangeType:  analysis.ChangeUpdated,
 					Scope:       analysis.ScopeRuntime,
 					Score:       48,
@@ -35,6 +36,27 @@ func TestRenderMarkdown(t *testing.T) {
 			RecommendedActions: []string{analysis.ActionReviewChangelog, analysis.ActionInspectInstall},
 			QuickCommands:      []string{"npm ls left-pad"},
 			Notes:              []analysis.Note{{Code: analysis.NoteDependencyReviewFallback}},
+			Targets: []analysis.TargetAnalysisResult{
+				{
+					Target:                    analysis.AnalysisTarget{DisplayName: "root", ManifestPath: "package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindRoot},
+					DependencyReviewAvailable: false,
+					Score:                     48,
+					Level:                     analysis.RiskLevelHigh,
+					BlastRadius:               analysis.BlastRadiusMedium,
+					ChangedDependencies: []analysis.DependencyChange{
+						{
+							Name:        "left-pad",
+							Target:      "root",
+							ChangeType:  analysis.ChangeUpdated,
+							Scope:       analysis.ScopeRuntime,
+							Score:       48,
+							RiskDrivers: []string{analysis.DriverMajorVersionBump, analysis.DriverInstallScript},
+							FromVersion: "1.0.0",
+							ToVersion:   "2.0.0",
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -47,6 +69,9 @@ func TestRenderMarkdown(t *testing.T) {
 	}
 	if !strings.Contains(output, "영향 범위") {
 		t.Fatalf("expected korean labels in markdown output")
+	}
+	if !strings.Contains(output, "타깃별 결과") {
+		t.Fatalf("expected target section in markdown output")
 	}
 	if !strings.Contains(output, "`npm ls left-pad`") {
 		t.Fatalf("expected quick command")

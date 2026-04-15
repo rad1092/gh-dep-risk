@@ -26,13 +26,15 @@ type BundlePaths struct {
 }
 
 type BundleMetadata struct {
-	Repo                      string               `json:"repo"`
-	PR                        PullRequestMetadata  `json:"pr"`
-	WorkflowRunURL            string               `json:"workflow_run_url,omitempty"`
-	Score                     int                  `json:"score"`
-	Level                     analysis.RiskLevel   `json:"level"`
-	BlastRadius               analysis.BlastRadius `json:"blast_radius"`
-	DependencyReviewAvailable bool                 `json:"dependency_review_available"`
+	Repo                      string                    `json:"repo"`
+	PR                        PullRequestMetadata       `json:"pr"`
+	WorkflowRunURL            string                    `json:"workflow_run_url,omitempty"`
+	Score                     int                       `json:"score"`
+	Level                     analysis.RiskLevel        `json:"level"`
+	BlastRadius               analysis.BlastRadius      `json:"blast_radius"`
+	DependencyReviewAvailable bool                      `json:"dependency_review_available"`
+	Targets                   []analysis.AnalysisTarget `json:"targets,omitempty"`
+	TargetCount               int                       `json:"target_count"`
 }
 
 func WriteBundle(report Report, lang, dir string) (BundlePaths, error) {
@@ -82,6 +84,46 @@ func WriteBundle(report Report, lang, dir string) (BundlePaths, error) {
 		}
 	}
 
+	for _, target := range report.Analysis.Targets {
+		targetDir := filepath.Join(trimmedDir, "targets", safeTargetDir(target.Target))
+		if err := os.MkdirAll(targetDir, 0o755); err != nil {
+			return BundlePaths{}, fmt.Errorf("create target bundle directory: %w", err)
+		}
+		targetReport := Report{
+			Repo: report.Repo,
+			PR:   report.PR,
+			Analysis: analysis.AnalysisResult{
+				DependencyReviewAvailable: target.DependencyReviewAvailable,
+				Score:                     target.Score,
+				Level:                     target.Level,
+				BlastRadius:               target.BlastRadius,
+				ChangedDependencies:       append([]analysis.DependencyChange(nil), target.ChangedDependencies...),
+				RiskDrivers:               append([]string(nil), target.RiskDrivers...),
+				RecommendedActions:        append([]string(nil), target.RecommendedActions...),
+				QuickCommands:             append([]string(nil), target.QuickCommands...),
+				Notes:                     append([]analysis.Note(nil), target.Notes...),
+				AddedTransitiveCount:      target.AddedTransitiveCount,
+				Targets:                   []analysis.TargetAnalysisResult{target},
+			},
+		}
+		targetJSON, err := Render(targetReport, "json", lang)
+		if err != nil {
+			return BundlePaths{}, err
+		}
+		targetMarkdown, err := Render(targetReport, "markdown", lang)
+		if err != nil {
+			return BundlePaths{}, err
+		}
+		for filePath, content := range map[string]string{
+			filepath.Join(targetDir, BundleJSONFile):     targetJSON,
+			filepath.Join(targetDir, BundleMarkdownFile): targetMarkdown,
+		} {
+			if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+				return BundlePaths{}, fmt.Errorf("write %s: %w", filepath.Base(filePath), err)
+			}
+		}
+	}
+
 	return paths, nil
 }
 
@@ -94,6 +136,8 @@ func toBundleMetadata(report Report) BundleMetadata {
 		Level:                     report.Analysis.Level,
 		BlastRadius:               report.Analysis.BlastRadius,
 		DependencyReviewAvailable: report.Analysis.DependencyReviewAvailable,
+		Targets:                   collectBundleTargets(report.Analysis.Targets),
+		TargetCount:               len(report.Analysis.Targets),
 	}
 }
 
@@ -105,4 +149,23 @@ func workflowRunURL() string {
 		return ""
 	}
 	return fmt.Sprintf("%s/%s/actions/runs/%s", serverURL, repository, runID)
+}
+
+func collectBundleTargets(targets []analysis.TargetAnalysisResult) []analysis.AnalysisTarget {
+	result := make([]analysis.AnalysisTarget, 0, len(targets))
+	for _, target := range targets {
+		result = append(result, target.Target)
+	}
+	return result
+}
+
+func safeTargetDir(target analysis.AnalysisTarget) string {
+	name := displayTarget(target)
+	replacer := strings.NewReplacer("/", "-", "\\", "-", " ", "-", ":", "-", "*", "-", "?", "-", "\"", "-", "<", "-", ">", "-", "|", "-")
+	safe := replacer.Replace(name)
+	safe = strings.Trim(safe, "-.")
+	if safe == "" {
+		safe = "root"
+	}
+	return safe
 }

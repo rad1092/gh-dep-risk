@@ -90,3 +90,26 @@ func TestDetectSourceKind(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectTargetPackagesForWorkspaceUsesSharedRootLockfile(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "workspace.root.head.package-lock.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lockfile, err := ParseLockfile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	view := lockfile.CollectTargetPackages("apps/web", []string{"@acme/ui", "axios", "react"})
+	if _, ok := view.Direct["axios"]; !ok {
+		t.Fatalf("expected axios to resolve as a direct workspace dependency")
+	}
+	if _, ok := view.Transitive["node_modules/form-data"]; !ok {
+		t.Fatalf("expected shared root transitive dependency to be included")
+	}
+	if view.Approximate {
+		t.Fatalf("expected exact workspace attribution for shared root lockfile fixture")
+	}
+}

@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"gh-dep-risk/internal/analysis"
 	ghclient "gh-dep-risk/internal/github"
+	"gh-dep-risk/internal/render"
 	"github.com/cli/go-gh/v2/pkg/api"
 )
 
@@ -98,7 +100,7 @@ func TestRunPRExitCodeFailLevel(t *testing.T) {
 
 func TestRunPRExitCodeAuth(t *testing.T) {
 	client := newConfiguredFakeGitHubClient(t)
-	client.viewerLoginErr = ghclient.AuthError{Op: "viewer"}
+	client.getPullRequestErr = ghclient.AuthError{Op: "pull"}
 
 	_, _, err := runPRWithClient(t, client, RunPROptions{})
 	assertExitCode(t, err, 4)
@@ -213,8 +215,8 @@ func TestRunPRWritesBundleFromSingleAnalysisPass(t *testing.T) {
 			t.Fatalf("expected bundle file %s: %v", name, statErr)
 		}
 	}
-	if client.viewerLoginCalls != 1 || client.getPullRequestCalls != 1 || client.listPullRequestCalls != 1 || client.compareCalls != 1 {
-		t.Fatalf("expected a single GitHub analysis pass, got viewer=%d pr=%d files=%d compare=%d", client.viewerLoginCalls, client.getPullRequestCalls, client.listPullRequestCalls, client.compareCalls)
+	if client.viewerLoginCalls != 0 || client.getPullRequestCalls != 1 || client.listPullRequestCalls != 1 || client.compareCalls != 1 || client.listRepositoryFileCalls != 2 {
+		t.Fatalf("expected a single GitHub analysis pass, got viewer=%d pr=%d files=%d compare=%d trees=%d", client.viewerLoginCalls, client.getPullRequestCalls, client.listPullRequestCalls, client.compareCalls, client.listRepositoryFileCalls)
 	}
 	if client.getFileCalls != 4 {
 		t.Fatalf("expected four manifest/lockfile fetches, got %d", client.getFileCalls)
@@ -238,49 +240,190 @@ func TestRunPRWritesBundleBeforeFailLevelExit(t *testing.T) {
 	}
 }
 
+func TestRunPRListTargets(t *testing.T) {
+	client := newWorkspaceFakeGitHubClient(t)
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{ListTargets: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"root\troot\tpackage.json\tpackage-lock.json",
+		"workspace\tapps/web\tapps/web/package.json\tpackage-lock.json",
+		"workspace\tpackages/ui\tpackages/ui/package.json\tpackage-lock.json",
+		"standalone\tservices/api\tservices/api/package.json\tservices/api/package-lock.json",
+	} {
+		if !strings.Contains(stdout, expected) {
+			t.Fatalf("expected target listing to contain %q, got %q", expected, stdout)
+		}
+	}
+}
+
+func TestRunPRPathFiltering(t *testing.T) {
+	client := newWorkspaceFakeGitHubClient(t)
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "apps/web/package.json", Status: "modified"},
+		{Filename: "packages/ui/package.json", Status: "modified"},
+		{Filename: "package-lock.json", Status: "modified"},
+	}
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{
+		Format: "json",
+		Paths:  []string{"apps/web"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload render.JSONReport
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Targets) != 1 || payload.Targets[0].Target.DisplayName != "apps/web" {
+		t.Fatalf("expected only apps/web target, got %#v", payload.Targets)
+	}
+	if client.compareManifestCalls["apps/web/package.json"] != 1 {
+		t.Fatalf("expected apps/web manifest compare call")
+	}
+	if client.compareManifestCalls["packages/ui/package.json"] != 0 {
+		t.Fatalf("expected packages/ui manifest compare to be skipped")
+	}
+}
+
+func TestRunPRPathFilteringRejectsUnknownTarget(t *testing.T) {
+	client := newWorkspaceFakeGitHubClient(t)
+
+	_, _, err := runPRWithClient(t, client, RunPROptions{Paths: []string{"apps/unknown"}})
+	assertExitCode(t, err, 1)
+	if !strings.Contains(err.Error(), "unknown npm target path") {
+		t.Fatalf("expected clear unknown target error, got %v", err)
+	}
+}
+
+func TestRunPRAggregatesMultipleTargets(t *testing.T) {
+	client := newWorkspaceFakeGitHubClient(t)
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "apps/web/package.json", Status: "modified"},
+		{Filename: "packages/ui/package.json", Status: "modified"},
+		{Filename: "package-lock.json", Status: "modified"},
+	}
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{Format: "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var payload render.JSONReport
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Targets) != 2 {
+		t.Fatalf("expected two analyzed targets, got %#v", payload.Targets)
+	}
+	if payload.Targets[0].Target.DisplayName != "apps/web" {
+		t.Fatalf("expected riskiest target first, got %#v", payload.Targets)
+	}
+	if payload.DependencyReviewAvailable != true {
+		t.Fatalf("expected dependency review to be available")
+	}
+	if payload.Score <= payload.Targets[0].Score {
+		t.Fatalf("expected aggregate score bonus above max target score, got %#v", payload)
+	}
+}
+
+func TestRunPRDependencyReviewFallbackForSingleTargetMarksAggregate(t *testing.T) {
+	client := newWorkspaceFakeGitHubClient(t)
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "packages/ui/package.json", Status: "modified"},
+		{Filename: "package-lock.json", Status: "modified"},
+	}
+	client.compareManifestErr["packages/ui/package.json"] = &api.HTTPError{StatusCode: 404, Message: "dependency review disabled"}
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{Format: "json", Paths: []string{"packages/ui"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, `"dependency_review_available": false`) {
+		t.Fatalf("expected aggregate fallback output, got %q", stdout)
+	}
+}
+
+func TestRunPRBundleIncludesPerTargetFiles(t *testing.T) {
+	client := newWorkspaceFakeGitHubClient(t)
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "apps/web/package.json", Status: "modified"},
+		{Filename: "packages/ui/package.json", Status: "modified"},
+		{Filename: "package-lock.json", Status: "modified"},
+	}
+	bundleDir := t.TempDir()
+
+	_, _, err := runPRWithClient(t, client, RunPROptions{BundleDir: bundleDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		filepath.Join(bundleDir, "targets", "apps-web", "dep-risk.json"),
+		filepath.Join(bundleDir, "targets", "apps-web", "dep-risk.md"),
+		filepath.Join(bundleDir, "targets", "packages-ui", "dep-risk.json"),
+		filepath.Join(bundleDir, "targets", "packages-ui", "dep-risk.md"),
+	} {
+		if _, err := os.Stat(name); err != nil {
+			t.Fatalf("expected per-target bundle file %s: %v", name, err)
+		}
+	}
+}
+
 type fakeGitHubClient struct {
-	repo                   ghclient.Repo
-	viewerLogin            string
-	viewerLoginErr         error
-	resolveRepoErr         error
-	resolveCurrentPRNumber int
-	resolveCurrentPRErr    error
-	resolveCurrentPRCalls  int
-	viewerLoginCalls       int
-	pr                     ghclient.PullRequest
-	getPullRequestErr      error
-	getPullRequestCalls    int
-	files                  []ghclient.PullRequestFile
-	listPullRequestErr     error
-	listPullRequestCalls   int
-	compareChanges         []ghclient.DependencyReviewChange
-	compareErr             error
-	compareCalls           int
-	filesByKey             map[string][]byte
-	getFileErr             map[string]error
-	getFileCalls           int
-	comments               []ghclient.IssueComment
-	listCommentsErr        error
-	listCommentsCalls      int
-	createCommentErr       error
-	createCommentCalls     int
-	updateCommentErr       error
-	updateCommentCalls     int
-	deleteCommentErr       error
-	deleteCommentCalls     int
-	createdComments        []string
-	updatedComments        map[int64]string
-	deletedComments        []int64
+	repo                     ghclient.Repo
+	viewerLogin              string
+	viewerLoginErr           error
+	resolveRepoErr           error
+	resolveCurrentPRNumber   int
+	resolveCurrentPRErr      error
+	resolveCurrentPRCalls    int
+	viewerLoginCalls         int
+	pr                       ghclient.PullRequest
+	getPullRequestErr        error
+	getPullRequestCalls      int
+	files                    []ghclient.PullRequestFile
+	listPullRequestErr       error
+	listPullRequestCalls     int
+	repositoryFilesByRef     map[string][]string
+	listRepositoryFileCalls  int
+	compareChanges           []ghclient.DependencyReviewChange
+	compareChangesByManifest map[string][]ghclient.DependencyReviewChange
+	compareErr               error
+	compareCalls             int
+	compareManifestErr       map[string]error
+	compareManifestCalls     map[string]int
+	filesByKey               map[string][]byte
+	getFileErr               map[string]error
+	getFileCalls             int
+	comments                 []ghclient.IssueComment
+	listCommentsErr          error
+	listCommentsCalls        int
+	createCommentErr         error
+	createCommentCalls       int
+	updateCommentErr         error
+	updateCommentCalls       int
+	deleteCommentErr         error
+	deleteCommentCalls       int
+	createdComments          []string
+	updatedComments          map[int64]string
+	deletedComments          []int64
 }
 
 func newFakeGitHubClient() *fakeGitHubClient {
 	return &fakeGitHubClient{
-		repo:                   testRepo(),
-		viewerLogin:            "reviewer",
-		resolveCurrentPRNumber: 123,
-		updatedComments:        map[int64]string{},
-		filesByKey:             map[string][]byte{},
-		getFileErr:             map[string]error{},
+		repo:                     testRepo(),
+		viewerLogin:              "reviewer",
+		resolveCurrentPRNumber:   123,
+		updatedComments:          map[int64]string{},
+		repositoryFilesByRef:     map[string][]string{},
+		compareChangesByManifest: map[string][]ghclient.DependencyReviewChange{},
+		compareManifestErr:       map[string]error{},
+		compareManifestCalls:     map[string]int{},
+		filesByKey:               map[string][]byte{},
+		getFileErr:               map[string]error{},
 	}
 }
 
@@ -309,6 +452,59 @@ func newConfiguredFakeGitHubClient(t *testing.T) *fakeGitHubClient {
 	client.filesByKey[fileKey("package.json", "head-sha")] = readFixture(t, "head.package.json")
 	client.filesByKey[fileKey("package-lock.json", "base-sha")] = readFixture(t, "base.package-lock.json")
 	client.filesByKey[fileKey("package-lock.json", "head-sha")] = readFixture(t, "head.package-lock.json")
+	client.repositoryFilesByRef["base-sha"] = []string{"package.json", "package-lock.json"}
+	client.repositoryFilesByRef["head-sha"] = []string{"package.json", "package-lock.json"}
+	return client
+}
+
+func newWorkspaceFakeGitHubClient(t *testing.T) *fakeGitHubClient {
+	t.Helper()
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "Update workspace dependencies",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "apps/web/package.json", Status: "modified"},
+		{Filename: "packages/ui/package.json", Status: "modified"},
+		{Filename: "package-lock.json", Status: "modified"},
+	}
+	client.repositoryFilesByRef["base-sha"] = []string{
+		"package.json",
+		"package-lock.json",
+		"apps/web/package.json",
+		"packages/ui/package.json",
+		"services/api/package.json",
+		"services/api/package-lock.json",
+	}
+	client.repositoryFilesByRef["head-sha"] = append([]string(nil), client.repositoryFilesByRef["base-sha"]...)
+	client.filesByKey[fileKey("package.json", "base-sha")] = readFixture(t, "workspace.root.package.json")
+	client.filesByKey[fileKey("package.json", "head-sha")] = readFixture(t, "workspace.root.package.json")
+	client.filesByKey[fileKey("package-lock.json", "base-sha")] = readFixture(t, "workspace.root.base.package-lock.json")
+	client.filesByKey[fileKey("package-lock.json", "head-sha")] = readFixture(t, "workspace.root.head.package-lock.json")
+	client.filesByKey[fileKey("apps/web/package.json", "base-sha")] = readFixture(t, "workspace.apps-web.base.package.json")
+	client.filesByKey[fileKey("apps/web/package.json", "head-sha")] = readFixture(t, "workspace.apps-web.head.package.json")
+	client.filesByKey[fileKey("packages/ui/package.json", "base-sha")] = readFixture(t, "workspace.packages-ui.base.package.json")
+	client.filesByKey[fileKey("packages/ui/package.json", "head-sha")] = readFixture(t, "workspace.packages-ui.head.package.json")
+	client.filesByKey[fileKey("services/api/package.json", "base-sha")] = readFixture(t, "standalone.service.base.package.json")
+	client.filesByKey[fileKey("services/api/package.json", "head-sha")] = readFixture(t, "standalone.service.head.package.json")
+	client.filesByKey[fileKey("services/api/package-lock.json", "base-sha")] = readFixture(t, "standalone.service.base.package-lock.json")
+	client.filesByKey[fileKey("services/api/package-lock.json", "head-sha")] = readFixture(t, "standalone.service.head.package-lock.json")
+	client.compareChangesByManifest["apps/web/package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "axios", Manifest: "apps/web/package.json", Ecosystem: "npm", ChangeType: "added", Version: "1.7.0"},
+	}
+	client.compareChangesByManifest["packages/ui/package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "tailwind-merge", Manifest: "packages/ui/package.json", Ecosystem: "npm", ChangeType: "added", Version: "2.3.0"},
+	}
+	client.compareChangesByManifest["services/api/package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "lodash", Manifest: "services/api/package.json", Ecosystem: "npm", ChangeType: "removed", Version: "4.17.20"},
+		{Name: "lodash", Manifest: "services/api/package.json", Ecosystem: "npm", ChangeType: "added", Version: "4.17.21"},
+	}
 	return client
 }
 
@@ -348,6 +544,23 @@ func (f *fakeGitHubClient) ListPullRequestFiles(context.Context, ghclient.Repo, 
 func (f *fakeGitHubClient) CompareDependencies(context.Context, ghclient.Repo, string, string) ([]ghclient.DependencyReviewChange, error) {
 	f.compareCalls++
 	return append([]ghclient.DependencyReviewChange(nil), f.compareChanges...), f.compareErr
+}
+
+func (f *fakeGitHubClient) CompareDependenciesForManifest(_ context.Context, _ ghclient.Repo, _, _ string, manifestPath string) ([]ghclient.DependencyReviewChange, error) {
+	f.compareCalls++
+	f.compareManifestCalls[manifestPath]++
+	if err, ok := f.compareManifestErr[manifestPath]; ok {
+		return nil, err
+	}
+	if changes, ok := f.compareChangesByManifest[manifestPath]; ok {
+		return append([]ghclient.DependencyReviewChange(nil), changes...), nil
+	}
+	return append([]ghclient.DependencyReviewChange(nil), f.compareChanges...), f.compareErr
+}
+
+func (f *fakeGitHubClient) ListRepositoryFiles(_ context.Context, _ ghclient.Repo, ref string) ([]string, error) {
+	f.listRepositoryFileCalls++
+	return append([]string(nil), f.repositoryFilesByRef[ref]...), nil
 }
 
 func (f *fakeGitHubClient) GetRepositoryFile(_ context.Context, _ ghclient.Repo, path, ref string) ([]byte, error) {

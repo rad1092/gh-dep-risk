@@ -3,6 +3,7 @@ package npm
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 	"sort"
 )
 
@@ -11,6 +12,7 @@ type PackageManifest struct {
 	Dependencies         map[string]string `json:"dependencies"`
 	DevDependencies      map[string]string `json:"devDependencies"`
 	OptionalDependencies map[string]string `json:"optionalDependencies"`
+	Workspaces           []string          `json:"-"`
 }
 
 func ParsePackageManifest(data []byte) (*PackageManifest, error) {
@@ -18,9 +20,21 @@ func ParsePackageManifest(data []byte) (*PackageManifest, error) {
 		return nil, nil
 	}
 
-	var manifest PackageManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
+	var raw struct {
+		Name                 string            `json:"name"`
+		Dependencies         map[string]string `json:"dependencies"`
+		DevDependencies      map[string]string `json:"devDependencies"`
+		OptionalDependencies map[string]string `json:"optionalDependencies"`
+		Workspaces           json.RawMessage   `json:"workspaces"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse package.json: %w", err)
+	}
+	manifest := &PackageManifest{
+		Name:                 raw.Name,
+		Dependencies:         raw.Dependencies,
+		DevDependencies:      raw.DevDependencies,
+		OptionalDependencies: raw.OptionalDependencies,
 	}
 	if manifest.Dependencies == nil {
 		manifest.Dependencies = map[string]string{}
@@ -31,7 +45,12 @@ func ParsePackageManifest(data []byte) (*PackageManifest, error) {
 	if manifest.OptionalDependencies == nil {
 		manifest.OptionalDependencies = map[string]string{}
 	}
-	return &manifest, nil
+	workspaces, err := parseWorkspaces(raw.Workspaces)
+	if err != nil {
+		return nil, err
+	}
+	manifest.Workspaces = workspaces
+	return manifest, nil
 }
 
 func (m *PackageManifest) Scope(name string) (string, bool) {
@@ -86,4 +105,51 @@ func (m *PackageManifest) DirectNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func parseWorkspaces(data json.RawMessage) ([]string, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+
+	var array []string
+	if err := json.Unmarshal(data, &array); err == nil {
+		return cleanWorkspacePatterns(array), nil
+	}
+
+	var object struct {
+		Packages []string `json:"packages"`
+	}
+	if err := json.Unmarshal(data, &object); err != nil {
+		return nil, fmt.Errorf("parse package.json workspaces: %w", err)
+	}
+	return cleanWorkspacePatterns(object.Packages), nil
+}
+
+func cleanWorkspacePatterns(patterns []string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		cleaned := cleanWorkspacePattern(pattern)
+		if cleaned == "" {
+			continue
+		}
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		result = append(result, cleaned)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func cleanWorkspacePattern(pattern string) string {
+	cleaned := path.Clean(path.Clean(pattern))
+	switch cleaned {
+	case ".", "/":
+		return ""
+	default:
+		return cleaned
+	}
 }

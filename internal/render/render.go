@@ -25,18 +25,19 @@ type Report struct {
 }
 
 type JSONReport struct {
-	Repo                      string                      `json:"repo"`
-	PR                        PullRequestMetadata         `json:"pr"`
-	Score                     int                         `json:"score"`
-	Level                     analysis.RiskLevel          `json:"level"`
-	BlastRadius               analysis.BlastRadius        `json:"blast_radius"`
-	DependencyReviewAvailable bool                        `json:"dependency_review_available"`
-	Summary                   []string                    `json:"summary"`
-	RiskDrivers               []string                    `json:"risk_drivers"`
-	RecommendedActions        []string                    `json:"recommended_actions"`
-	QuickCommands             []string                    `json:"quick_commands"`
-	Notes                     []analysis.Note             `json:"notes,omitempty"`
-	Changes                   []analysis.DependencyChange `json:"changes"`
+	Repo                      string                          `json:"repo"`
+	PR                        PullRequestMetadata             `json:"pr"`
+	Score                     int                             `json:"score"`
+	Level                     analysis.RiskLevel              `json:"level"`
+	BlastRadius               analysis.BlastRadius            `json:"blast_radius"`
+	DependencyReviewAvailable bool                            `json:"dependency_review_available"`
+	Summary                   []string                        `json:"summary"`
+	RiskDrivers               []string                        `json:"risk_drivers"`
+	RecommendedActions        []string                        `json:"recommended_actions"`
+	QuickCommands             []string                        `json:"quick_commands"`
+	Notes                     []analysis.Note                 `json:"notes,omitempty"`
+	Changes                   []analysis.DependencyChange     `json:"changes"`
+	Targets                   []analysis.TargetAnalysisResult `json:"targets,omitempty"`
 }
 
 func Render(report Report, format, lang string) (string, error) {
@@ -70,6 +71,7 @@ func toJSONReport(report Report, lang string) JSONReport {
 		QuickCommands:             append([]string(nil), report.Analysis.QuickCommands...),
 		Notes:                     append([]analysis.Note(nil), report.Analysis.Notes...),
 		Changes:                   append([]analysis.DependencyChange(nil), report.Analysis.ChangedDependencies...),
+		Targets:                   append([]analysis.TargetAnalysisResult(nil), report.Analysis.Targets...),
 	}
 }
 
@@ -79,6 +81,9 @@ func summaryBullets(report Report, lang string) []string {
 	}
 	if report.Analysis.AddedTransitiveCount > 0 {
 		summary = append(summary, localizeSummaryTransitive(report.Analysis.AddedTransitiveCount, lang))
+	}
+	if len(report.Analysis.Targets) > 1 {
+		summary = append(summary, localizeSummaryTargets(len(report.Analysis.Targets), lang))
 	}
 	if !report.Analysis.DependencyReviewAvailable {
 		summary = append(summary, localizeSummaryFallback(lang))

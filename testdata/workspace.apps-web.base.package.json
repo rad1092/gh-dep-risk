@@ -1,0 +1,7 @@
+{
+  "name": "web",
+  "dependencies": {
+    "@acme/ui": "1.0.0",
+    "react": "^18.2.0"
+  }
+}

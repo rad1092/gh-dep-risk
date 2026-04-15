@@ -84,6 +84,8 @@ type Client interface {
 	GetPullRequest(ctx context.Context, repo Repo, number int) (PullRequest, error)
 	ListPullRequestFiles(ctx context.Context, repo Repo, number int) ([]PullRequestFile, error)
 	CompareDependencies(ctx context.Context, repo Repo, baseSHA, headSHA string) ([]DependencyReviewChange, error)
+	CompareDependenciesForManifest(ctx context.Context, repo Repo, baseSHA, headSHA, manifestPath string) ([]DependencyReviewChange, error)
+	ListRepositoryFiles(ctx context.Context, repo Repo, ref string) ([]string, error)
 	GetRepositoryFile(ctx context.Context, repo Repo, path, ref string) ([]byte, error)
 	ListIssueComments(ctx context.Context, repo Repo, issueNumber int) ([]IssueComment, error)
 	CreateIssueComment(ctx context.Context, repo Repo, issueNumber int, body string) (IssueComment, error)
@@ -220,6 +222,14 @@ func (c *APIClient) ListPullRequestFiles(ctx context.Context, repo Repo, number 
 }
 
 func (c *APIClient) CompareDependencies(ctx context.Context, repo Repo, baseSHA, headSHA string) ([]DependencyReviewChange, error) {
+	return c.compareDependencies(ctx, repo, baseSHA, headSHA, "")
+}
+
+func (c *APIClient) CompareDependenciesForManifest(ctx context.Context, repo Repo, baseSHA, headSHA, manifestPath string) ([]DependencyReviewChange, error) {
+	return c.compareDependencies(ctx, repo, baseSHA, headSHA, manifestPath)
+}
+
+func (c *APIClient) compareDependencies(ctx context.Context, repo Repo, baseSHA, headSHA, manifestPath string) ([]DependencyReviewChange, error) {
 	client, err := c.restClient(repo)
 	if err != nil {
 		return nil, classifyAuthError(err)
@@ -241,6 +251,9 @@ func (c *APIClient) CompareDependencies(ctx context.Context, repo Repo, baseSHA,
 
 	baseHead := url.PathEscape(fmt.Sprintf("%s...%s", baseSHA, headSHA))
 	path := fmt.Sprintf("repos/%s/%s/dependency-graph/compare/%s", repo.Owner, repo.Name, baseHead)
+	if strings.TrimSpace(manifestPath) != "" {
+		path += "?name=" + url.QueryEscape(manifestPath)
+	}
 	if err := client.DoWithContext(ctx, "GET", path, nil, &resp); err != nil {
 		return nil, err
 	}
@@ -266,6 +279,34 @@ func (c *APIClient) CompareDependencies(ctx context.Context, repo Repo, baseSHA,
 		})
 	}
 	return changes, nil
+}
+
+func (c *APIClient) ListRepositoryFiles(ctx context.Context, repo Repo, ref string) ([]string, error) {
+	client, err := c.restClient(repo)
+	if err != nil {
+		return nil, classifyAuthError(err)
+	}
+
+	var resp struct {
+		Tree []struct {
+			Path string `json:"path"`
+			Type string `json:"type"`
+		} `json:"tree"`
+	}
+	path := fmt.Sprintf("repos/%s/%s/git/trees/%s?recursive=1", repo.Owner, repo.Name, url.PathEscape(ref))
+	if err := client.DoWithContext(ctx, "GET", path, nil, &resp); err != nil {
+		return nil, classifyAuthError(err)
+	}
+
+	files := make([]string, 0, len(resp.Tree))
+	for _, entry := range resp.Tree {
+		if entry.Type != "blob" || strings.TrimSpace(entry.Path) == "" {
+			continue
+		}
+		files = append(files, entry.Path)
+	}
+	sort.Strings(files)
+	return files, nil
 }
 
 func (c *APIClient) GetRepositoryFile(ctx context.Context, repo Repo, path, ref string) ([]byte, error) {

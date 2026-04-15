@@ -51,3 +51,39 @@ func TestAnalyzeScoresAndCaps(t *testing.T) {
 		t.Fatalf("expected score cap at 100, got %d", result.ChangedDependencies[0].Score)
 	}
 }
+
+func TestAggregateResultsAcrossTargets(t *testing.T) {
+	targets := []TargetAnalysisResult{
+		{
+			Target:              AnalysisTarget{DisplayName: "apps/web", ManifestPath: "apps/web/package.json", LockfilePath: "package-lock.json", Kind: TargetKindWorkspace},
+			Score:               48,
+			Level:               RiskLevelHigh,
+			BlastRadius:         BlastRadiusMedium,
+			ChangedDependencies: []DependencyChange{{Name: "axios", Target: "apps/web", Score: 48, RiskDrivers: []string{DriverAddedDirectRuntime}}},
+			RiskDrivers:         []string{DriverAddedDirectRuntime},
+			RecommendedActions:  []string{ActionRunTargetedTests},
+			QuickCommands:       []string{"cd apps/web && npm ls axios"},
+		},
+		{
+			Target:              AnalysisTarget{DisplayName: "packages/ui", ManifestPath: "packages/ui/package.json", LockfilePath: "package-lock.json", Kind: TargetKindWorkspace},
+			Score:               22,
+			Level:               RiskLevelMedium,
+			BlastRadius:         BlastRadiusLow,
+			ChangedDependencies: []DependencyChange{{Name: "tailwind-merge", Target: "packages/ui", Score: 22, RiskDrivers: []string{DriverAddedDirectRuntime}}},
+			RiskDrivers:         []string{DriverAddedDirectRuntime},
+			RecommendedActions:  []string{ActionRunTargetedTests},
+			QuickCommands:       []string{"cd packages/ui && npm ls tailwind-merge"},
+		},
+	}
+
+	result := AggregateResults(targets)
+	if result.Score != 52 {
+		t.Fatalf("expected aggregate score with deterministic bonus, got %d", result.Score)
+	}
+	if result.Level != RiskLevelHigh {
+		t.Fatalf("expected aggregate high level, got %s", result.Level)
+	}
+	if len(result.Targets) != 2 || len(result.ChangedDependencies) != 2 {
+		t.Fatalf("expected flattened aggregate result, got %#v", result)
+	}
+}

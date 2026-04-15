@@ -75,6 +75,64 @@ func TestWriteBundle(t *testing.T) {
 	}
 }
 
+func TestWriteBundleIncludesPerTargetFiles(t *testing.T) {
+	report := Report{
+		Repo: "owner/repo",
+		PR: PullRequestMetadata{
+			Number: 123,
+			URL:    "https://github.com/owner/repo/pull/123",
+			Title:  "Workspace update",
+		},
+		Analysis: analysis.AnalysisResult{
+			DependencyReviewAvailable: true,
+			Score:                     52,
+			Level:                     analysis.RiskLevelHigh,
+			BlastRadius:               analysis.BlastRadiusMedium,
+			ChangedDependencies: []analysis.DependencyChange{
+				{Name: "axios", Target: "apps/web", ChangeType: analysis.ChangeAdded, Scope: analysis.ScopeRuntime, Score: 30},
+				{Name: "tailwind-merge", Target: "packages/ui", ChangeType: analysis.ChangeAdded, Scope: analysis.ScopeRuntime, Score: 22},
+			},
+			Targets: []analysis.TargetAnalysisResult{
+				{
+					Target:                    analysis.AnalysisTarget{DisplayName: "apps/web", ManifestPath: "apps/web/package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindWorkspace},
+					DependencyReviewAvailable: true,
+					Score:                     30,
+					Level:                     analysis.RiskLevelMedium,
+					BlastRadius:               analysis.BlastRadiusMedium,
+					ChangedDependencies:       []analysis.DependencyChange{{Name: "axios", Target: "apps/web", ChangeType: analysis.ChangeAdded, Scope: analysis.ScopeRuntime, Score: 30}},
+				},
+				{
+					Target:                    analysis.AnalysisTarget{DisplayName: "packages/ui", ManifestPath: "packages/ui/package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindWorkspace},
+					DependencyReviewAvailable: true,
+					Score:                     22,
+					Level:                     analysis.RiskLevelMedium,
+					BlastRadius:               analysis.BlastRadiusLow,
+					ChangedDependencies:       []analysis.DependencyChange{{Name: "tailwind-merge", Target: "packages/ui", ChangeType: analysis.ChangeAdded, Scope: analysis.ScopeRuntime, Score: 22}},
+				},
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	paths, err := WriteBundle(report, "en", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readFile(t, filepath.Join(paths.Dir, "targets", "apps-web", "dep-risk.md")), "<!-- gh-dep-risk -->") {
+		t.Fatalf("expected per-target markdown file")
+	}
+	if !strings.Contains(readFile(t, filepath.Join(paths.Dir, "targets", "packages-ui", "dep-risk.json")), `"display_name": "packages/ui"`) {
+		t.Fatalf("expected per-target JSON file")
+	}
+	var metadata BundleMetadata
+	if err := json.Unmarshal([]byte(readFile(t, paths.Metadata)), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.TargetCount != 2 || len(metadata.Targets) != 2 {
+		t.Fatalf("expected target metadata, got %#v", metadata)
+	}
+}
+
 type bundleContents struct {
 	Human    string
 	JSON     string

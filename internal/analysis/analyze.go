@@ -1,6 +1,8 @@
 package analysis
 
 import (
+	"fmt"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -20,15 +22,20 @@ type candidateSummary struct {
 	ToRequirement   string
 	Resolved        string
 	Vulnerabilities []Vulnerability
+	HeadPackage     npm.LockPackage
+}
+
+type targetLockViews struct {
+	Base                   npm.TargetPackages
+	Head                   npm.TargetPackages
+	AddedTransitive        int
+	ApproximateAttribution bool
 }
 
 func Analyze(input Input, publishedAt map[PackageVersion]time.Time) AnalysisResult {
-	candidates := collectCandidateSummaries(input)
-	directNames := directNameSet(input.BaseManifest, input.HeadManifest, input.BaseLockfile, input.HeadLockfile)
-	addedTransitiveCount := 0
-	if input.HeadLockfile != nil {
-		addedTransitiveCount = input.HeadLockfile.AddedTransitiveCount(input.BaseLockfile, directNames)
-	}
+	directNames := targetDirectNames(input)
+	views := buildTargetLockViews(input, directNames)
+	candidates := collectCandidateSummaries(input, views, directNames)
 
 	changes := make([]DependencyChange, 0, len(candidates))
 	notes := make([]Note, 0)
@@ -36,6 +43,7 @@ func Analyze(input Input, publishedAt map[PackageVersion]time.Time) AnalysisResu
 		change := DependencyChange{
 			Name:                 candidate.Name,
 			Manifest:             candidate.Manifest,
+			Target:               input.Target.DisplayName,
 			ChangeType:           candidate.ChangeType,
 			Scope:                candidate.Scope,
 			Direct:               candidate.Direct,
@@ -45,7 +53,7 @@ func Analyze(input Input, publishedAt map[PackageVersion]time.Time) AnalysisResu
 			ToRequirement:        candidate.ToRequirement,
 			Resolved:             candidate.Resolved,
 			Vulnerabilities:      append([]Vulnerability(nil), candidate.Vulnerabilities...),
-			AddedTransitiveCount: addedTransitiveCount,
+			AddedTransitiveCount: views.AddedTransitive,
 		}
 
 		score := 0
@@ -74,21 +82,19 @@ func Analyze(input Input, publishedAt map[PackageVersion]time.Time) AnalysisResu
 				drivers = append(drivers, DriverRecentlyPublished)
 			}
 		}
-
-		headPkg := headPackage(input.HeadLockfile, candidate.Name, candidate.Direct)
-		if headPkg.HasInstallScript {
+		if candidate.HeadPackage.HasInstallScript {
 			score += 20
 			drivers = append(drivers, DriverInstallScript)
 		}
-		if len(headPkg.OS) > 0 || len(headPkg.CPU) > 0 {
+		if len(candidate.HeadPackage.OS) > 0 || len(candidate.HeadPackage.CPU) > 0 {
 			score += 6
 			drivers = append(drivers, DriverPlatformRestricted)
 		}
-		if addedTransitiveCount >= 5 {
+		if views.AddedTransitive >= 5 {
 			score += 12
 			drivers = append(drivers, DriverTransitiveFive)
 		}
-		if addedTransitiveCount >= 15 {
+		if views.AddedTransitive >= 15 {
 			score += 8
 			drivers = append(drivers, DriverTransitiveFifteen)
 		}
@@ -119,23 +125,112 @@ func Analyze(input Input, publishedAt map[PackageVersion]time.Time) AnalysisResu
 	if !input.DependencyReviewAvailable {
 		notes = append(notes, Note{Code: NoteDependencyReviewFallback})
 	}
+	if views.ApproximateAttribution {
+		notes = append(notes, Note{
+			Code:   NoteApproximateAttribution,
+			Detail: input.Target.DisplayName,
+		})
+	}
 
 	score := aggregateScore(changes)
 	return AnalysisResult{
 		DependencyReviewAvailable: input.DependencyReviewAvailable,
 		Score:                     score,
 		Level:                     LevelForScore(score),
-		BlastRadius:               deriveBlastRadius(changes, addedTransitiveCount),
+		BlastRadius:               deriveBlastRadius(changes, views.AddedTransitive),
 		ChangedDependencies:       changes,
 		RiskDrivers:               collectDrivers(changes),
 		RecommendedActions:        recommendedActions(changes, notes),
-		QuickCommands:             quickCommands(changes),
+		QuickCommands:             quickCommands(input.Target, changes),
 		Notes:                     uniqueNotes(notes),
-		AddedTransitiveCount:      addedTransitiveCount,
+		AddedTransitiveCount:      views.AddedTransitive,
 	}
 }
 
-func collectCandidateSummaries(input Input) []candidateSummary {
+func AggregateResults(targets []TargetAnalysisResult) AnalysisResult {
+	if len(targets) == 0 {
+		return AnalysisResult{
+			DependencyReviewAvailable: true,
+			Level:                     RiskLevelLow,
+			BlastRadius:               BlastRadiusLow,
+		}
+	}
+
+	sortedTargets := append([]TargetAnalysisResult(nil), targets...)
+	sort.Slice(sortedTargets, func(i, j int) bool {
+		if sortedTargets[i].Score == sortedTargets[j].Score {
+			return sortedTargets[i].Target.DisplayName < sortedTargets[j].Target.DisplayName
+		}
+		return sortedTargets[i].Score > sortedTargets[j].Score
+	})
+
+	changes := make([]DependencyChange, 0)
+	notes := make([]Note, 0)
+	drivers := make([]string, 0)
+	actions := make([]string, 0)
+	commands := make([]string, 0)
+	scores := make([]int, 0, len(sortedTargets))
+	dependencyReviewAvailable := true
+	blastRadius := BlastRadiusLow
+	addedTransitive := 0
+
+	for _, target := range sortedTargets {
+		scores = append(scores, target.Score)
+		changes = append(changes, append([]DependencyChange(nil), target.ChangedDependencies...)...)
+		notes = append(notes, append([]Note(nil), target.Notes...)...)
+		drivers = append(drivers, target.RiskDrivers...)
+		actions = append(actions, target.RecommendedActions...)
+		commands = append(commands, target.QuickCommands...)
+		addedTransitive += target.AddedTransitiveCount
+		dependencyReviewAvailable = dependencyReviewAvailable && target.DependencyReviewAvailable
+		if blastRadiusRank(target.BlastRadius) > blastRadiusRank(blastRadius) {
+			blastRadius = target.BlastRadius
+		}
+	}
+
+	sort.Slice(changes, func(i, j int) bool {
+		if changes[i].Score == changes[j].Score {
+			if changes[i].Target == changes[j].Target {
+				return changes[i].Name < changes[j].Name
+			}
+			return changes[i].Target < changes[j].Target
+		}
+		return changes[i].Score > changes[j].Score
+	})
+
+	score := aggregateTargetScore(scores)
+	return AnalysisResult{
+		DependencyReviewAvailable: dependencyReviewAvailable,
+		Score:                     score,
+		Level:                     LevelForScore(score),
+		BlastRadius:               blastRadius,
+		ChangedDependencies:       changes,
+		RiskDrivers:               uniqueStrings(drivers),
+		RecommendedActions:        uniqueStrings(actions),
+		QuickCommands:             uniqueStrings(commands),
+		Notes:                     uniqueNotes(notes),
+		AddedTransitiveCount:      addedTransitive,
+		Targets:                   sortedTargets,
+	}
+}
+
+func TargetResult(target AnalysisTarget, result AnalysisResult) TargetAnalysisResult {
+	return TargetAnalysisResult{
+		Target:                    target,
+		DependencyReviewAvailable: result.DependencyReviewAvailable,
+		Score:                     result.Score,
+		Level:                     result.Level,
+		BlastRadius:               result.BlastRadius,
+		ChangedDependencies:       append([]DependencyChange(nil), result.ChangedDependencies...),
+		RiskDrivers:               append([]string(nil), result.RiskDrivers...),
+		RecommendedActions:        append([]string(nil), result.RecommendedActions...),
+		QuickCommands:             append([]string(nil), result.QuickCommands...),
+		Notes:                     append([]Note(nil), result.Notes...),
+		AddedTransitiveCount:      result.AddedTransitiveCount,
+	}
+}
+
+func collectCandidateSummaries(input Input, views targetLockViews, directNames []string) []candidateSummary {
 	reviewMap := map[string]candidateSummary{}
 	for _, change := range input.ReviewChanges {
 		if change.Name == "" {
@@ -164,21 +259,21 @@ func collectCandidateSummaries(input Input) []candidateSummary {
 		reviewMap[change.Name] = current
 	}
 
-	names := map[string]candidateSummary{}
+	candidatesByName := map[string]candidateSummary{}
 	if len(reviewMap) > 0 {
 		for name, current := range reviewMap {
-			fillCandidateFromManifests(&current, input)
-			names[name] = current
+			fillCandidateFromState(&current, input, views, directNames)
+			candidatesByName[name] = current
 		}
 	} else {
-		for name, current := range collectManifestAndLockCandidates(input) {
-			fillCandidateFromManifests(&current, input)
-			names[name] = current
+		for name, current := range collectManifestAndLockCandidates(input, views, directNames) {
+			fillCandidateFromState(&current, input, views, directNames)
+			candidatesByName[name] = current
 		}
 	}
 
-	candidates := make([]candidateSummary, 0, len(names))
-	for _, candidate := range names {
+	candidates := make([]candidateSummary, 0, len(candidatesByName))
+	for _, candidate := range candidatesByName {
 		if candidate.ChangeType == "" {
 			continue
 		}
@@ -190,33 +285,20 @@ func collectCandidateSummaries(input Input) []candidateSummary {
 	return candidates
 }
 
-func collectManifestAndLockCandidates(input Input) map[string]candidateSummary {
+func collectManifestAndLockCandidates(input Input, views targetLockViews, directNames []string) map[string]candidateSummary {
 	candidates := map[string]candidateSummary{}
 	allNames := map[string]struct{}{}
-	for _, name := range input.BaseManifest.DirectNames() {
+	for _, name := range directNames {
 		allNames[name] = struct{}{}
-	}
-	for _, name := range input.HeadManifest.DirectNames() {
-		allNames[name] = struct{}{}
-	}
-	if input.BaseLockfile != nil {
-		for name := range input.BaseLockfile.TopLevelPackages() {
-			allNames[name] = struct{}{}
-		}
-	}
-	if input.HeadLockfile != nil {
-		for name := range input.HeadLockfile.TopLevelPackages() {
-			allNames[name] = struct{}{}
-		}
 	}
 	for name := range allNames {
 		candidate := candidateSummary{Name: name}
-		fillCandidateFromManifests(&candidate, input)
+		fillCandidateFromState(&candidate, input, views, directNames)
 		if candidate.ChangeType != "" {
 			candidates[name] = candidate
 		}
 	}
-	for name, candidate := range collectTransitiveCandidates(input) {
+	for name, candidate := range collectTransitiveCandidates(views) {
 		if _, ok := candidates[name]; !ok {
 			candidates[name] = candidate
 		}
@@ -224,28 +306,13 @@ func collectManifestAndLockCandidates(input Input) map[string]candidateSummary {
 	return candidates
 }
 
-func collectTransitiveCandidates(input Input) map[string]candidateSummary {
+func collectTransitiveCandidates(views targetLockViews) map[string]candidateSummary {
 	candidates := map[string]candidateSummary{}
-	basePackages := map[string]npm.LockPackage{}
-	headPackages := map[string]npm.LockPackage{}
-	if input.BaseLockfile != nil {
-		for path, pkg := range input.BaseLockfile.Packages {
-			if path == "" || npm.IsTopLevelPackagePath(path) {
-				continue
-			}
-			basePackages[path] = pkg
-		}
-	}
-	if input.HeadLockfile != nil {
-		for path, pkg := range input.HeadLockfile.Packages {
-			if path == "" || npm.IsTopLevelPackagePath(path) {
-				continue
-			}
-			headPackages[path] = pkg
-		}
-	}
-	for path, headPkg := range headPackages {
-		basePkg, ok := basePackages[path]
+	headPaths := sortedLockPaths(views.Head.Transitive)
+	basePaths := views.Base.Transitive
+	for _, pkgPath := range headPaths {
+		headPkg := views.Head.Transitive[pkgPath]
+		basePkg, ok := basePaths[pkgPath]
 		if ok && basePkg.Version == headPkg.Version {
 			continue
 		}
@@ -255,6 +322,7 @@ func collectTransitiveCandidates(input Input) map[string]candidateSummary {
 		current.Direct = false
 		current.ToVersion = headPkg.Version
 		current.Resolved = headPkg.Resolved
+		current.HeadPackage = headPkg
 		if ok {
 			current.ChangeType = ChangeUpdated
 			current.FromVersion = basePkg.Version
@@ -263,8 +331,9 @@ func collectTransitiveCandidates(input Input) map[string]candidateSummary {
 		}
 		candidates[headPkg.Name] = current
 	}
-	for path, basePkg := range basePackages {
-		if _, ok := headPackages[path]; ok {
+	for _, pkgPath := range sortedLockPaths(basePaths) {
+		basePkg := basePaths[pkgPath]
+		if _, ok := views.Head.Transitive[pkgPath]; ok {
 			continue
 		}
 		current := candidates[basePkg.Name]
@@ -278,9 +347,15 @@ func collectTransitiveCandidates(input Input) map[string]candidateSummary {
 	return candidates
 }
 
-func fillCandidateFromManifests(candidate *candidateSummary, input Input) {
+func fillCandidateFromState(candidate *candidateSummary, input Input, views targetLockViews, directNames []string) {
 	baseScope, baseDirect := manifestScope(candidate.Name, input.BaseManifest)
 	headScope, headDirect := manifestScope(candidate.Name, input.HeadManifest)
+	if !baseDirect {
+		_, baseDirect = views.Base.Direct[candidate.Name]
+	}
+	if !headDirect {
+		_, headDirect = views.Head.Direct[candidate.Name]
+	}
 	if headDirect {
 		candidate.Scope = headScope
 		candidate.Direct = true
@@ -296,20 +371,17 @@ func fillCandidateFromManifests(candidate *candidateSummary, input Input) {
 	}
 
 	if candidate.Manifest == "" {
-		candidate.Manifest = "package-lock.json"
 		if candidate.Direct {
-			candidate.Manifest = "package.json"
+			candidate.Manifest = input.Target.ManifestPath
+		} else {
+			candidate.Manifest = input.Target.LockfilePath
 		}
 	}
 
 	baseRequirement := input.BaseManifest.Requirement(candidate.Name)
 	headRequirement := input.HeadManifest.Requirement(candidate.Name)
-	basePkg, basePkgOK := topLevelPackage(input.BaseLockfile, candidate.Name)
-	headPkg, headPkgOK := topLevelPackage(input.HeadLockfile, candidate.Name)
-	if !candidate.Direct {
-		basePkg, basePkgOK = anyPackage(input.BaseLockfile, candidate.Name)
-		headPkg, headPkgOK = anyPackage(input.HeadLockfile, candidate.Name)
-	}
+	basePkg, basePkgOK := directOrAnyPackage(views.Base, candidate.Name, candidate.Direct)
+	headPkg, headPkgOK := directOrAnyPackage(views.Head, candidate.Name, candidate.Direct)
 
 	if candidate.FromRequirement == "" {
 		candidate.FromRequirement = baseRequirement
@@ -325,6 +397,9 @@ func fillCandidateFromManifests(candidate *candidateSummary, input Input) {
 	}
 	if candidate.Resolved == "" && headPkgOK {
 		candidate.Resolved = headPkg.Resolved
+	}
+	if headPkgOK {
+		candidate.HeadPackage = headPkg
 	}
 
 	if candidate.ChangeType == "" {
@@ -360,56 +435,74 @@ func manifestScope(name string, manifest *npm.PackageManifest) (DependencyScope,
 	}
 }
 
-func directNameSet(baseManifest, headManifest *npm.PackageManifest, baseLock, headLock *npm.Lockfile) map[string]struct{} {
-	names := map[string]struct{}{}
-	for _, name := range baseManifest.DirectNames() {
-		names[name] = struct{}{}
+func targetDirectNames(input Input) []string {
+	set := map[string]struct{}{}
+	for _, name := range input.BaseManifest.DirectNames() {
+		set[name] = struct{}{}
 	}
-	for _, name := range headManifest.DirectNames() {
-		names[name] = struct{}{}
+	for _, name := range input.HeadManifest.DirectNames() {
+		set[name] = struct{}{}
 	}
-	if len(names) == 0 {
-		if baseLock != nil {
-			for name := range baseLock.TopLevelPackages() {
-				names[name] = struct{}{}
-			}
+	if len(set) == 0 {
+		for name := range input.BaseLockfile.TargetRootDependencies(input.Target.Directory()) {
+			set[name] = struct{}{}
 		}
-		if headLock != nil {
-			for name := range headLock.TopLevelPackages() {
-				names[name] = struct{}{}
-			}
+		for name := range input.HeadLockfile.TargetRootDependencies(input.Target.Directory()) {
+			set[name] = struct{}{}
 		}
 	}
+	names := make([]string, 0, len(set))
+	for name := range set {
+		names = append(names, name)
+	}
+	sort.Strings(names)
 	return names
 }
 
-func topLevelPackage(lockfile *npm.Lockfile, name string) (npm.LockPackage, bool) {
-	if lockfile == nil {
-		return npm.LockPackage{}, false
+func buildTargetLockViews(input Input, directNames []string) targetLockViews {
+	views := targetLockViews{}
+	targetDir := input.Target.Directory()
+	if input.BaseLockfile != nil {
+		views.Base = input.BaseLockfile.CollectTargetPackages(targetDir, directNames)
 	}
-	pkg, ok := lockfile.TopLevelPackages()[name]
-	return pkg, ok
+	if input.HeadLockfile != nil {
+		views.Head = input.HeadLockfile.CollectTargetPackages(targetDir, directNames)
+	}
+	if input.HeadLockfile != nil {
+		views.AddedTransitive, views.ApproximateAttribution = input.HeadLockfile.AddedTransitiveCountForTarget(input.BaseLockfile, targetDir, directNames)
+	} else {
+		views.ApproximateAttribution = views.Base.Approximate
+	}
+	views.ApproximateAttribution = views.ApproximateAttribution || views.Base.Approximate || views.Head.Approximate
+	return views
 }
 
-func anyPackage(lockfile *npm.Lockfile, name string) (npm.LockPackage, bool) {
-	if lockfile == nil {
-		return npm.LockPackage{}, false
-	}
-	packages := lockfile.FindByName(name)
-	if len(packages) == 0 {
-		return npm.LockPackage{}, false
-	}
-	return packages[0], true
-}
-
-func headPackage(lockfile *npm.Lockfile, name string, direct bool) npm.LockPackage {
+func directOrAnyPackage(view npm.TargetPackages, name string, direct bool) (npm.LockPackage, bool) {
 	if direct {
-		if pkg, ok := topLevelPackage(lockfile, name); ok {
-			return pkg
+		pkg, ok := view.Direct[name]
+		return pkg, ok
+	}
+	return packageByName(view.All, name)
+}
+
+func packageByName(packages map[string]npm.LockPackage, name string) (npm.LockPackage, bool) {
+	paths := sortedLockPaths(packages)
+	for _, pkgPath := range paths {
+		pkg := packages[pkgPath]
+		if pkg.Name == name {
+			return pkg, true
 		}
 	}
-	pkg, _ := anyPackage(lockfile, name)
-	return pkg
+	return npm.LockPackage{}, false
+}
+
+func sortedLockPaths(packages map[string]npm.LockPackage) []string {
+	paths := make([]string, 0, len(packages))
+	for pkgPath := range packages {
+		paths = append(paths, pkgPath)
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func isMajorBump(fromVersion, toVersion, fromRequirement, toRequirement string) bool {
@@ -430,12 +523,25 @@ func aggregateScore(changes []DependencyChange) int {
 	if len(changes) == 0 {
 		return 0
 	}
-	maxScore := changes[0].Score
+	scores := make([]int, 0, len(changes))
+	for _, change := range changes {
+		scores = append(scores, change.Score)
+	}
+	return aggregateTargetScore(scores)
+}
+
+func aggregateTargetScore(scores []int) int {
+	if len(scores) == 0 {
+		return 0
+	}
+	sorted := append([]int(nil), scores...)
+	sort.Sort(sort.Reverse(sort.IntSlice(sorted)))
+	maxScore := sorted[0]
 	bonus := 0
-	for _, change := range changes[1:] {
-		if change.Score >= 20 {
+	for _, score := range sorted[1:] {
+		if score >= 20 {
 			bonus += 4
-		} else if change.Score > 0 {
+		} else if score > 0 {
 			bonus++
 		}
 		if bonus >= 15 {
@@ -443,11 +549,11 @@ func aggregateScore(changes []DependencyChange) int {
 			break
 		}
 	}
-	score := maxScore + bonus
-	if score > 100 {
-		score = 100
+	total := maxScore + bonus
+	if total > 100 {
+		return 100
 	}
-	return score
+	return total
 }
 
 func deriveBlastRadius(changes []DependencyChange, addedTransitiveCount int) BlastRadius {
@@ -468,6 +574,17 @@ func deriveBlastRadius(changes []DependencyChange, addedTransitiveCount int) Bla
 		return BlastRadiusMedium
 	default:
 		return BlastRadiusLow
+	}
+}
+
+func blastRadiusRank(radius BlastRadius) int {
+	switch radius {
+	case BlastRadiusHigh:
+		return 3
+	case BlastRadiusMedium:
+		return 2
+	default:
+		return 1
 	}
 }
 
@@ -510,13 +627,17 @@ func recommendedActions(changes []DependencyChange, notes []Note) []string {
 	return sortedKeys(set)
 }
 
-func quickCommands(changes []DependencyChange) []string {
-	commands := []string{"npm ls --all"}
+func quickCommands(target AnalysisTarget, changes []DependencyChange) []string {
+	prefix := ""
+	if dir := target.Directory(); dir != "" {
+		prefix = "cd " + dir + " && "
+	}
+	commands := []string{prefix + "npm ls --all"}
 	if len(changes) > 0 {
-		target := changes[0]
-		commands = append(commands, "npm ls "+target.Name)
-		if target.ToVersion != "" {
-			commands = append(commands, "npm view "+target.Name+"@"+target.ToVersion+" time --json")
+		top := changes[0]
+		commands = append(commands, prefix+"npm ls "+top.Name)
+		if top.ToVersion != "" {
+			commands = append(commands, prefix+"npm view "+top.Name+"@"+top.ToVersion+" time --json")
 		}
 	}
 	return uniqueStrings(commands)
@@ -561,4 +682,24 @@ func uniqueNotes(notes []Note) []Note {
 		return left < right
 	})
 	return result
+}
+
+func normalizeTargetDisplayName(target AnalysisTarget) string {
+	if target.DisplayName != "" {
+		return target.DisplayName
+	}
+	if dir := target.Directory(); dir != "" {
+		return dir
+	}
+	return "root"
+}
+
+func targetHeading(target AnalysisTarget) string {
+	label := normalizeTargetDisplayName(target)
+	switch target.Kind {
+	case TargetKindWorkspace:
+		return fmt.Sprintf("%s (%s)", label, path.Base(target.WorkspaceRootPath))
+	default:
+		return label
+	}
 }

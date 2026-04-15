@@ -1,0 +1,6 @@
+{
+  "name": "@acme/ui",
+  "dependencies": {
+    "clsx": "^1.2.1"
+  }
+}
