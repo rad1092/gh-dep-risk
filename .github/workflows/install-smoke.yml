@@ -28,3 +28,5 @@ jobs:
           gh extension install rad1092/gh-dep-risk --force
           gh dep-risk version
           gh dep-risk version --json
+          gh dep-risk pr 1 --repo rad1092/ascii-diagram-editor --lang en --format json --no-registry > dep-risk.json
+          grep -E '"score"|"level"|"dependency_review_available"' dep-risk.json
