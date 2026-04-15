@@ -44,7 +44,8 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 	fs.BoolVar(&opts.ListTargets, "list-targets", false, "print detected npm analysis targets and exit")
 	fs.Usage = func() { printPRUsage(stderr) }
 
-	if err := fs.Parse(args); err != nil {
+	parseArgs := normalizePRArgs(args)
+	if err := fs.Parse(parseArgs); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
@@ -97,6 +98,52 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 		fmt.Fprintln(stderr, exitErr.Err)
 	}
 	return exitErr.Code
+}
+
+func normalizePRArgs(args []string) []string {
+	reordered := make([]string, 0, len(args))
+	var prArg string
+
+	for i := 0; i < len(args); i++ {
+		token := args[i]
+		if token == "--" {
+			reordered = append(reordered, args[i:]...)
+			break
+		}
+
+		if strings.HasPrefix(token, "-") {
+			reordered = append(reordered, token)
+			if flagConsumesValue(token) && !strings.Contains(token, "=") && i+1 < len(args) {
+				i++
+				reordered = append(reordered, args[i])
+			}
+			continue
+		}
+
+		if prArg == "" {
+			prArg = token
+			continue
+		}
+		reordered = append(reordered, token)
+	}
+
+	if prArg != "" {
+		reordered = append(reordered, prArg)
+	}
+	return reordered
+}
+
+func flagConsumesValue(token string) bool {
+	name := strings.TrimLeft(token, "-")
+	if index := strings.Index(name, "="); index >= 0 {
+		name = name[:index]
+	}
+	switch name {
+	case "repo", "format", "lang", "fail-level", "bundle-dir", "path":
+		return true
+	default:
+		return false
+	}
 }
 
 func printPRUsage(w io.Writer) {

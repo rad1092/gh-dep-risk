@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -21,6 +22,11 @@ import (
 const (
 	MarkerComment = "<!-- gh-dep-risk -->"
 	apiVersion    = "2026-03-10"
+)
+
+var (
+	ghExecContext    = gh.ExecContext
+	currentGitBranch = resolveCurrentGitBranch
 )
 
 var ErrNotFound = errors.New("not found")
@@ -132,7 +138,15 @@ func (c *APIClient) ViewerLogin(ctx context.Context, repo Repo) (string, error) 
 }
 
 func (c *APIClient) ResolveCurrentPR(ctx context.Context, repo Repo) (int, error) {
-	stdout, stderr, err := gh.ExecContext(ctx, "pr", "view", "--json", "number", "--repo", repo.FullName())
+	branch, err := currentGitBranch(ctx)
+	if err != nil {
+		if isAuthMessage(err.Error()) {
+			return 0, AuthError{Op: "resolve current PR", Err: err}
+		}
+		return 0, fmt.Errorf("resolve current PR: %w", err)
+	}
+
+	stdout, stderr, err := ghExecContext(ctx, "pr", "view", branch, "--json", "number", "--repo", repo.FullName())
 	if err != nil {
 		message := strings.TrimSpace(stderr.String())
 		if message == "" {
@@ -154,6 +168,27 @@ func (c *APIClient) ResolveCurrentPR(ctx context.Context, repo Repo) (int, error
 		return 0, errors.New("unable to resolve current PR for the current branch")
 	}
 	return resp.Number, nil
+}
+
+func resolveCurrentGitBranch(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "branch", "--show-current")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = err.Error()
+		}
+		return "", fmt.Errorf("determine current branch: %s", message)
+	}
+
+	branch := strings.TrimSpace(stdout.String())
+	if branch == "" {
+		return "", errors.New("determine current branch: empty branch name")
+	}
+	return branch, nil
 }
 
 func (c *APIClient) GetPullRequest(ctx context.Context, repo Repo, number int) (PullRequest, error) {
