@@ -1,0 +1,30 @@
+name: install-smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install released extension
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_CONFIG_DIR: ${{ runner.temp }}/gh-config
+        run: |
+          set -euo pipefail
+          mkdir -p "$GH_CONFIG_DIR"
+          gh extension install rad1092/gh-dep-risk --force
+          gh dep-risk version
+          gh dep-risk version --json
