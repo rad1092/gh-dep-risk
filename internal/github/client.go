@@ -1,0 +1,512 @@
+package github
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"sort"
+	"strings"
+	"time"
+
+	gh "github.com/cli/go-gh/v2"
+	"github.com/cli/go-gh/v2/pkg/api"
+	ghrepo "github.com/cli/go-gh/v2/pkg/repository"
+)
+
+const (
+	MarkerComment = "<!-- gh-dep-risk -->"
+	apiVersion    = "2026-03-10"
+)
+
+var ErrNotFound = errors.New("not found")
+
+type Repo struct {
+	Host  string
+	Owner string
+	Name  string
+}
+
+func (r Repo) FullName() string {
+	if strings.EqualFold(r.Host, "github.com") || r.Host == "" {
+		return fmt.Sprintf("%s/%s", r.Owner, r.Name)
+	}
+	return fmt.Sprintf("%s/%s/%s", r.Host, r.Owner, r.Name)
+}
+
+type PullRequest struct {
+	Title       string
+	Draft       bool
+	Number      int
+	BaseSHA     string
+	HeadSHA     string
+	URL         string
+	AuthorLogin string
+}
+
+type PullRequestFile struct {
+	Filename string
+	Status   string
+}
+
+type Vulnerability struct {
+	Severity string
+	GHSAID   string
+	Summary  string
+	URL      string
+}
+
+type DependencyReviewChange struct {
+	ChangeType      string
+	Manifest        string
+	Ecosystem       string
+	Name            string
+	Version         string
+	Vulnerabilities []Vulnerability
+}
+
+type IssueComment struct {
+	ID        int64
+	Body      string
+	UserLogin string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type Client interface {
+	ResolveRepo(ctx context.Context, override string) (Repo, error)
+	ViewerLogin(ctx context.Context, repo Repo) (string, error)
+	ResolveCurrentPR(ctx context.Context, repo Repo) (int, error)
+	GetPullRequest(ctx context.Context, repo Repo, number int) (PullRequest, error)
+	ListPullRequestFiles(ctx context.Context, repo Repo, number int) ([]PullRequestFile, error)
+	CompareDependencies(ctx context.Context, repo Repo, baseSHA, headSHA string) ([]DependencyReviewChange, error)
+	GetRepositoryFile(ctx context.Context, repo Repo, path, ref string) ([]byte, error)
+	ListIssueComments(ctx context.Context, repo Repo, issueNumber int) ([]IssueComment, error)
+	CreateIssueComment(ctx context.Context, repo Repo, issueNumber int, body string) (IssueComment, error)
+	UpdateIssueComment(ctx context.Context, repo Repo, commentID int64, body string) error
+	DeleteIssueComment(ctx context.Context, repo Repo, commentID int64) error
+}
+
+type APIClient struct{}
+
+func NewClient() *APIClient {
+	return &APIClient{}
+}
+
+func (c *APIClient) ResolveRepo(_ context.Context, override string) (Repo, error) {
+	var repo ghrepo.Repository
+	var err error
+	if override != "" {
+		repo, err = ghrepo.Parse(override)
+	} else {
+		repo, err = ghrepo.Current()
+	}
+	if err != nil {
+		return Repo{}, err
+	}
+	return Repo{Host: repo.Host, Owner: repo.Owner, Name: repo.Name}, nil
+}
+
+func (c *APIClient) ViewerLogin(ctx context.Context, repo Repo) (string, error) {
+	client, err := c.restClient(repo)
+	if err != nil {
+		return "", classifyAuthError(err)
+	}
+
+	var resp struct {
+		Login string `json:"login"`
+	}
+	if err := client.DoWithContext(ctx, "GET", "user", nil, &resp); err != nil {
+		return "", classifyAuthError(err)
+	}
+	if resp.Login == "" {
+		return "", AuthError{Op: "resolve authenticated viewer"}
+	}
+	return resp.Login, nil
+}
+
+func (c *APIClient) ResolveCurrentPR(ctx context.Context, repo Repo) (int, error) {
+	stdout, stderr, err := gh.ExecContext(ctx, "pr", "view", "--json", "number", "--repo", repo.FullName())
+	if err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = err.Error()
+		}
+		return 0, fmt.Errorf("resolve current PR: %s", message)
+	}
+
+	var resp struct {
+		Number int `json:"number"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		return 0, fmt.Errorf("decode current PR response: %w", err)
+	}
+	if resp.Number == 0 {
+		return 0, errors.New("unable to resolve current PR for the current branch")
+	}
+	return resp.Number, nil
+}
+
+func (c *APIClient) GetPullRequest(ctx context.Context, repo Repo, number int) (PullRequest, error) {
+	client, err := c.restClient(repo)
+	if err != nil {
+		return PullRequest{}, classifyAuthError(err)
+	}
+
+	var resp struct {
+		Title   string `json:"title"`
+		Draft   bool   `json:"draft"`
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+		Base    struct {
+			SHA string `json:"sha"`
+		} `json:"base"`
+		Head struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
+		User struct {
+			Login string `json:"login"`
+		} `json:"user"`
+	}
+	path := fmt.Sprintf("repos/%s/%s/pulls/%d", repo.Owner, repo.Name, number)
+	if err := client.DoWithContext(ctx, "GET", path, nil, &resp); err != nil {
+		return PullRequest{}, classifyAuthError(err)
+	}
+
+	return PullRequest{
+		Title:       resp.Title,
+		Draft:       resp.Draft,
+		Number:      resp.Number,
+		BaseSHA:     resp.Base.SHA,
+		HeadSHA:     resp.Head.SHA,
+		URL:         resp.HTMLURL,
+		AuthorLogin: resp.User.Login,
+	}, nil
+}
+
+func (c *APIClient) ListPullRequestFiles(ctx context.Context, repo Repo, number int) ([]PullRequestFile, error) {
+	client, err := c.restClient(repo)
+	if err != nil {
+		return nil, classifyAuthError(err)
+	}
+
+	files := []PullRequestFile{}
+	page := 1
+	for {
+		var batch []struct {
+			Filename string `json:"filename"`
+			Status   string `json:"status"`
+		}
+		path := fmt.Sprintf("repos/%s/%s/pulls/%d/files?per_page=100&page=%d", repo.Owner, repo.Name, number, page)
+		if err := client.DoWithContext(ctx, "GET", path, nil, &batch); err != nil {
+			return nil, classifyAuthError(err)
+		}
+		for _, file := range batch {
+			files = append(files, PullRequestFile{Filename: file.Filename, Status: file.Status})
+		}
+		if len(batch) < 100 {
+			break
+		}
+		page++
+	}
+	return files, nil
+}
+
+func (c *APIClient) CompareDependencies(ctx context.Context, repo Repo, baseSHA, headSHA string) ([]DependencyReviewChange, error) {
+	client, err := c.restClient(repo)
+	if err != nil {
+		return nil, classifyAuthError(err)
+	}
+
+	var resp []struct {
+		ChangeType      string `json:"change_type"`
+		Manifest        string `json:"manifest"`
+		Ecosystem       string `json:"ecosystem"`
+		Name            string `json:"name"`
+		Version         string `json:"version"`
+		Vulnerabilities []struct {
+			Severity string `json:"severity"`
+			GHSAID   string `json:"advisory_ghsa_id"`
+			Summary  string `json:"advisory_summary"`
+			URL      string `json:"advisory_url"`
+		} `json:"vulnerabilities"`
+	}
+
+	baseHead := url.PathEscape(fmt.Sprintf("%s...%s", baseSHA, headSHA))
+	path := fmt.Sprintf("repos/%s/%s/dependency-graph/compare/%s", repo.Owner, repo.Name, baseHead)
+	if err := client.DoWithContext(ctx, "GET", path, nil, &resp); err != nil {
+		return nil, err
+	}
+
+	changes := make([]DependencyReviewChange, 0, len(resp))
+	for _, item := range resp {
+		vulns := make([]Vulnerability, 0, len(item.Vulnerabilities))
+		for _, vuln := range item.Vulnerabilities {
+			vulns = append(vulns, Vulnerability{
+				Severity: vuln.Severity,
+				GHSAID:   vuln.GHSAID,
+				Summary:  vuln.Summary,
+				URL:      vuln.URL,
+			})
+		}
+		changes = append(changes, DependencyReviewChange{
+			ChangeType:      item.ChangeType,
+			Manifest:        item.Manifest,
+			Ecosystem:       item.Ecosystem,
+			Name:            item.Name,
+			Version:         item.Version,
+			Vulnerabilities: vulns,
+		})
+	}
+	return changes, nil
+}
+
+func (c *APIClient) GetRepositoryFile(ctx context.Context, repo Repo, path, ref string) ([]byte, error) {
+	client, err := c.restClient(repo)
+	if err != nil {
+		return nil, classifyAuthError(err)
+	}
+
+	var resp struct {
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+
+	contentPath := fmt.Sprintf("repos/%s/%s/contents/%s?ref=%s", repo.Owner, repo.Name, escapeContentPath(path), url.QueryEscape(ref))
+	if err := client.DoWithContext(ctx, "GET", contentPath, nil, &resp); err != nil {
+		if IsHTTPStatus(err, 404) {
+			return nil, ErrNotFound
+		}
+		return nil, classifyAuthError(err)
+	}
+	if resp.Encoding != "base64" {
+		return nil, fmt.Errorf("unsupported content encoding %q for %s", resp.Encoding, path)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(resp.Content, "\n", ""))
+	if err != nil {
+		return nil, fmt.Errorf("decode %s: %w", path, err)
+	}
+	return decoded, nil
+}
+
+func (c *APIClient) ListIssueComments(ctx context.Context, repo Repo, issueNumber int) ([]IssueComment, error) {
+	client, err := c.restClient(repo)
+	if err != nil {
+		return nil, classifyAuthError(err)
+	}
+
+	comments := []IssueComment{}
+	page := 1
+	for {
+		var batch []struct {
+			ID        int64     `json:"id"`
+			Body      string    `json:"body"`
+			CreatedAt time.Time `json:"created_at"`
+			UpdatedAt time.Time `json:"updated_at"`
+			User      struct {
+				Login string `json:"login"`
+			} `json:"user"`
+		}
+		path := fmt.Sprintf("repos/%s/%s/issues/%d/comments?per_page=100&page=%d", repo.Owner, repo.Name, issueNumber, page)
+		if err := client.DoWithContext(ctx, "GET", path, nil, &batch); err != nil {
+			return nil, classifyAuthError(err)
+		}
+		for _, item := range batch {
+			comments = append(comments, IssueComment{
+				ID:        item.ID,
+				Body:      item.Body,
+				UserLogin: item.User.Login,
+				CreatedAt: item.CreatedAt,
+				UpdatedAt: item.UpdatedAt,
+			})
+		}
+		if len(batch) < 100 {
+			break
+		}
+		page++
+	}
+	return comments, nil
+}
+
+func (c *APIClient) CreateIssueComment(ctx context.Context, repo Repo, issueNumber int, body string) (IssueComment, error) {
+	client, err := c.restClient(repo)
+	if err != nil {
+		return IssueComment{}, classifyAuthError(err)
+	}
+
+	payload, _ := json.Marshal(map[string]string{"body": body})
+	var resp struct {
+		ID        int64     `json:"id"`
+		Body      string    `json:"body"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		User      struct {
+			Login string `json:"login"`
+		} `json:"user"`
+	}
+	path := fmt.Sprintf("repos/%s/%s/issues/%d/comments", repo.Owner, repo.Name, issueNumber)
+	if err := client.DoWithContext(ctx, "POST", path, bytes.NewReader(payload), &resp); err != nil {
+		return IssueComment{}, classifyAuthError(err)
+	}
+	return IssueComment{
+		ID:        resp.ID,
+		Body:      resp.Body,
+		UserLogin: resp.User.Login,
+		CreatedAt: resp.CreatedAt,
+		UpdatedAt: resp.UpdatedAt,
+	}, nil
+}
+
+func (c *APIClient) UpdateIssueComment(ctx context.Context, repo Repo, commentID int64, body string) error {
+	client, err := c.restClient(repo)
+	if err != nil {
+		return classifyAuthError(err)
+	}
+	payload, _ := json.Marshal(map[string]string{"body": body})
+	path := fmt.Sprintf("repos/%s/%s/issues/comments/%d", repo.Owner, repo.Name, commentID)
+	return classifyAuthError(client.DoWithContext(ctx, "PATCH", path, bytes.NewReader(payload), &struct{}{}))
+}
+
+func (c *APIClient) DeleteIssueComment(ctx context.Context, repo Repo, commentID int64) error {
+	client, err := c.restClient(repo)
+	if err != nil {
+		return classifyAuthError(err)
+	}
+	path := fmt.Sprintf("repos/%s/%s/issues/comments/%d", repo.Owner, repo.Name, commentID)
+	return classifyAuthError(client.DoWithContext(ctx, "DELETE", path, nil, &struct{}{}))
+}
+
+func (c *APIClient) restClient(repo Repo) (*api.RESTClient, error) {
+	return api.NewRESTClient(api.ClientOptions{
+		Host: repo.Host,
+		Headers: map[string]string{
+			"Accept":               "application/vnd.github+json",
+			"X-GitHub-Api-Version": apiVersion,
+		},
+	})
+}
+
+func escapeContentPath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
+}
+
+type AuthError struct {
+	Op  string
+	Err error
+}
+
+func (e AuthError) Error() string {
+	if e.Err == nil {
+		return fmt.Sprintf("%s requires GitHub authentication or additional permissions", e.Op)
+	}
+	return fmt.Sprintf("%s requires GitHub authentication or additional permissions: %v", e.Op, e.Err)
+}
+
+func (e AuthError) Unwrap() error {
+	return e.Err
+}
+
+func classifyAuthError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if IsHTTPStatus(err, 401) {
+		return AuthError{Op: "GitHub request", Err: err}
+	}
+	return err
+}
+
+func IsAuthError(err error) bool {
+	var authErr AuthError
+	return errors.As(err, &authErr)
+}
+
+func IsHTTPStatus(err error, status int) bool {
+	var httpErr *api.HTTPError
+	return errors.As(err, &httpErr) && httpErr.StatusCode == status
+}
+
+func IsPermissionError(err error) bool {
+	return IsHTTPStatus(err, 401) || IsHTTPStatus(err, 403) || IsAuthError(err)
+}
+
+func IsDependencyReviewUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if IsHTTPStatus(err, 403) || IsHTTPStatus(err, 404) {
+		return true
+	}
+	return !IsPermissionError(err)
+}
+
+func UpsertMarkerComment(ctx context.Context, client Client, repo Repo, issueNumber int, viewerLogin string, body string, stderr io.Writer) error {
+	comments, err := client.ListIssueComments(ctx, repo, issueNumber)
+	if err != nil {
+		return err
+	}
+
+	own := make([]IssueComment, 0)
+	foreign := make([]IssueComment, 0)
+	for _, comment := range comments {
+		if !strings.Contains(comment.Body, MarkerComment) {
+			continue
+		}
+		if comment.UserLogin == viewerLogin {
+			own = append(own, comment)
+		} else {
+			foreign = append(foreign, comment)
+		}
+	}
+
+	if len(foreign) > 0 && stderr != nil {
+		authors := map[string]struct{}{}
+		for _, comment := range foreign {
+			authors[comment.UserLogin] = struct{}{}
+		}
+		names := make([]string, 0, len(authors))
+		for login := range authors {
+			names = append(names, login)
+		}
+		sort.Strings(names)
+		fmt.Fprintf(stderr, "warning: found marker comment owned by %s; only managing comments by %s\n", strings.Join(names, ", "), viewerLogin)
+	}
+
+	sort.SliceStable(own, func(i, j int) bool {
+		left := own[i].CreatedAt
+		if left.IsZero() {
+			left = own[i].UpdatedAt
+		}
+		right := own[j].CreatedAt
+		if right.IsZero() {
+			right = own[j].UpdatedAt
+		}
+		if left.Equal(right) {
+			return own[i].ID > own[j].ID
+		}
+		return left.After(right)
+	})
+
+	if len(own) == 0 {
+		_, err := client.CreateIssueComment(ctx, repo, issueNumber, body)
+		return err
+	}
+
+	if err := client.UpdateIssueComment(ctx, repo, own[0].ID, body); err != nil {
+		return err
+	}
+	for _, duplicate := range own[1:] {
+		if err := client.DeleteIssueComment(ctx, repo, duplicate.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}

@@ -1,0 +1,22 @@
+{
+  "name": "legacy-app",
+  "lockfileVersion": 1,
+  "dependencies": {
+    "chalk": {
+      "version": "4.1.0",
+      "resolved": "https://registry.npmjs.org/chalk/-/chalk-4.1.0.tgz",
+      "integrity": "sha512-chalk",
+      "requires": {
+        "ansi-styles": "^4.0.0"
+      },
+      "dependencies": {
+        "ansi-styles": {
+          "version": "4.2.1",
+          "resolved": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-4.2.1.tgz",
+          "integrity": "sha512-ansi",
+          "optional": true
+        }
+      }
+    }
+  }
+}
