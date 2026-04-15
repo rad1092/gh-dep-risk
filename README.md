@@ -349,6 +349,9 @@ Each manual run:
 
 If `comment=true`, comment ownership follows the workflow-authenticated identity
 backed by `GITHUB_TOKEN`.
+When the workflow is running in a different repository than the target PR,
+`GITHUB_TOKEN` may not be allowed to write cross-repo comments; in that case
+analysis can still run, but comment mode may exit with code `4`.
 
 ### Self-hosted runners
 

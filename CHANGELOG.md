@@ -6,6 +6,15 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 - No unreleased changes yet.
 
+## v0.1.1
+
+- Added the cross-platform `install-smoke` workflow to validate released
+  extension install and execution on Linux, macOS, and Windows.
+- Extended install smoke coverage to run `gh dep-risk pr` against a public test
+  PR instead of checking version output only.
+- Documented that workflow-driven cross-repo comment mode can be blocked by the
+  scope of `GITHUB_TOKEN`, which surfaces as exit code `4`.
+
 ## v0.1.0
 
 - Added `gh dep-risk pr` for on-demand npm dependency risk summaries on GitHub
