@@ -21,6 +21,7 @@ type RunPROptions struct {
 	Repo       string
 	Format     string
 	Lang       string
+	BundleDir  string
 	Comment    bool
 	FailLevel  analysis.RiskLevel
 	NoRegistry bool
@@ -167,6 +168,12 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 	}
 	if _, err := io.WriteString(deps.Stdout, output); err != nil {
 		return &ExitError{Code: 1, Err: err}
+	}
+
+	if strings.TrimSpace(opts.BundleDir) != "" {
+		if _, err := render.WriteBundle(report, opts.Lang, opts.BundleDir); err != nil {
+			return &ExitError{Code: 1, Err: err}
+		}
 	}
 
 	if opts.Comment {

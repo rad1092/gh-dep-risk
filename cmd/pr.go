@@ -27,6 +27,7 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 	fs.BoolVar(&opts.Comment, "comment", false, "upsert a PR timeline comment")
 	fs.StringVar(&failLevel, "fail-level", string(analysis.RiskLevelNone), "fail threshold: low|medium|high|critical|none")
 	fs.BoolVar(&opts.NoRegistry, "no-registry", false, "skip npm registry lookups")
+	fs.StringVar(&opts.BundleDir, "bundle-dir", "", "write human/json/markdown bundle files to a directory")
 	fs.Usage = func() { printPRUsage(stderr) }
 
 	if err := fs.Parse(args); err != nil {
@@ -91,6 +92,7 @@ func printPRUsage(w io.Writer) {
 	fmt.Fprintln(w, "  gh dep-risk pr 123")
 	fmt.Fprintln(w, "  gh dep-risk pr https://github.com/OWNER/REPO/pull/123")
 	fmt.Fprintln(w, "  gh dep-risk pr --format json")
+	fmt.Fprintln(w, "  gh dep-risk pr --bundle-dir ./dep-risk-bundle")
 	fmt.Fprintln(w, "  gh dep-risk pr --comment")
 	fmt.Fprintln(w, "  gh dep-risk pr --fail-level high")
 	fmt.Fprintln(w)
@@ -107,4 +109,6 @@ func printPRUsage(w io.Writer) {
 	fmt.Fprintln(w, "    \tfail threshold: low|medium|high|critical|none (default \"none\")")
 	fmt.Fprintln(w, "  -no-registry")
 	fmt.Fprintln(w, "    \tskip npm registry lookups")
+	fmt.Fprintln(w, "  -bundle-dir string")
+	fmt.Fprintln(w, "    \twrite human/json/markdown bundle files to a directory")
 }

@@ -1,3 +1,8 @@
+---
+name: dep-risk-gh-extension
+description: Maintain the gh-dep-risk precompiled GitHub CLI extension for on-demand npm dependency PR risk summaries. Use when working on this repo's CLI ergonomics, GitHub API behavior, package-lock or package.json parsing, deterministic risk analysis, comment upsert rules, output rendering, release workflows, or npm-only extension guardrails.
+---
+
 # dep-risk-gh-extension
 
 Use this skill when working on `gh-dep-risk`, the precompiled GitHub CLI extension for on-demand npm dependency PR risk summaries.
@@ -21,8 +26,8 @@ Use this skill when working on `gh-dep-risk`, the precompiled GitHub CLI extensi
 
 - marker comment is `<!-- gh-dep-risk -->`
 - use issue comments on the PR timeline, never review comments
-- `--comment` must maintain exactly one marker comment owned by the authenticated user
-- if multiple own marker comments exist, update the newest and delete older own duplicates
+- maintain exactly one marker comment owned by the authenticated user when `--comment` is set
+- update the newest own marker comment and delete older own duplicates
 - never edit or delete another author's marker comment
 
 ## Working rules

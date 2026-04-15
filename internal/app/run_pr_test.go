@@ -193,6 +193,51 @@ func TestRunPRCommentUpsertUpdatesNewestAndDeletesOlderDuplicates(t *testing.T) 
 	}
 }
 
+func TestRunPRWritesBundleFromSingleAnalysisPass(t *testing.T) {
+	client := newConfiguredFakeGitHubClient(t)
+	bundleDir := t.TempDir()
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{
+		Format:    "human",
+		Lang:      "en",
+		BundleDir: bundleDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, "owner/repo") {
+		t.Fatalf("expected stdout output, got %q", stdout)
+	}
+	for _, name := range []string{"dep-risk-human.txt", "dep-risk.json", "dep-risk.md", "metadata.json"} {
+		if _, statErr := os.Stat(filepath.Join(bundleDir, name)); statErr != nil {
+			t.Fatalf("expected bundle file %s: %v", name, statErr)
+		}
+	}
+	if client.viewerLoginCalls != 1 || client.getPullRequestCalls != 1 || client.listPullRequestCalls != 1 || client.compareCalls != 1 {
+		t.Fatalf("expected a single GitHub analysis pass, got viewer=%d pr=%d files=%d compare=%d", client.viewerLoginCalls, client.getPullRequestCalls, client.listPullRequestCalls, client.compareCalls)
+	}
+	if client.getFileCalls != 4 {
+		t.Fatalf("expected four manifest/lockfile fetches, got %d", client.getFileCalls)
+	}
+}
+
+func TestRunPRWritesBundleBeforeFailLevelExit(t *testing.T) {
+	client := newConfiguredFakeGitHubClient(t)
+	bundleDir := t.TempDir()
+
+	_, _, err := runPRWithClient(t, client, RunPROptions{
+		Lang:      "en",
+		BundleDir: bundleDir,
+		FailLevel: analysis.RiskLevelHigh,
+	})
+	assertExitCode(t, err, 3)
+	for _, name := range []string{"dep-risk-human.txt", "dep-risk.json", "dep-risk.md", "metadata.json"} {
+		if _, statErr := os.Stat(filepath.Join(bundleDir, name)); statErr != nil {
+			t.Fatalf("expected bundle file %s after fail-level exit: %v", name, statErr)
+		}
+	}
+}
+
 type fakeGitHubClient struct {
 	repo                   ghclient.Repo
 	viewerLogin            string
@@ -201,19 +246,28 @@ type fakeGitHubClient struct {
 	resolveCurrentPRNumber int
 	resolveCurrentPRErr    error
 	resolveCurrentPRCalls  int
+	viewerLoginCalls       int
 	pr                     ghclient.PullRequest
 	getPullRequestErr      error
+	getPullRequestCalls    int
 	files                  []ghclient.PullRequestFile
 	listPullRequestErr     error
+	listPullRequestCalls   int
 	compareChanges         []ghclient.DependencyReviewChange
 	compareErr             error
+	compareCalls           int
 	filesByKey             map[string][]byte
 	getFileErr             map[string]error
+	getFileCalls           int
 	comments               []ghclient.IssueComment
 	listCommentsErr        error
+	listCommentsCalls      int
 	createCommentErr       error
+	createCommentCalls     int
 	updateCommentErr       error
+	updateCommentCalls     int
 	deleteCommentErr       error
+	deleteCommentCalls     int
 	createdComments        []string
 	updatedComments        map[int64]string
 	deletedComments        []int64
@@ -272,6 +326,7 @@ func (f *fakeGitHubClient) ResolveRepo(_ context.Context, override string) (ghcl
 }
 
 func (f *fakeGitHubClient) ViewerLogin(context.Context, ghclient.Repo) (string, error) {
+	f.viewerLoginCalls++
 	return f.viewerLogin, f.viewerLoginErr
 }
 
@@ -281,18 +336,22 @@ func (f *fakeGitHubClient) ResolveCurrentPR(context.Context, ghclient.Repo) (int
 }
 
 func (f *fakeGitHubClient) GetPullRequest(context.Context, ghclient.Repo, int) (ghclient.PullRequest, error) {
+	f.getPullRequestCalls++
 	return f.pr, f.getPullRequestErr
 }
 
 func (f *fakeGitHubClient) ListPullRequestFiles(context.Context, ghclient.Repo, int) ([]ghclient.PullRequestFile, error) {
+	f.listPullRequestCalls++
 	return append([]ghclient.PullRequestFile(nil), f.files...), f.listPullRequestErr
 }
 
 func (f *fakeGitHubClient) CompareDependencies(context.Context, ghclient.Repo, string, string) ([]ghclient.DependencyReviewChange, error) {
+	f.compareCalls++
 	return append([]ghclient.DependencyReviewChange(nil), f.compareChanges...), f.compareErr
 }
 
 func (f *fakeGitHubClient) GetRepositoryFile(_ context.Context, _ ghclient.Repo, path, ref string) ([]byte, error) {
+	f.getFileCalls++
 	if err, ok := f.getFileErr[fileKey(path, ref)]; ok {
 		return nil, err
 	}
@@ -304,6 +363,7 @@ func (f *fakeGitHubClient) GetRepositoryFile(_ context.Context, _ ghclient.Repo,
 }
 
 func (f *fakeGitHubClient) ListIssueComments(context.Context, ghclient.Repo, int) ([]ghclient.IssueComment, error) {
+	f.listCommentsCalls++
 	if f.listCommentsErr != nil {
 		return nil, f.listCommentsErr
 	}
@@ -311,6 +371,7 @@ func (f *fakeGitHubClient) ListIssueComments(context.Context, ghclient.Repo, int
 }
 
 func (f *fakeGitHubClient) CreateIssueComment(_ context.Context, _ ghclient.Repo, _ int, body string) (ghclient.IssueComment, error) {
+	f.createCommentCalls++
 	if f.createCommentErr != nil {
 		return ghclient.IssueComment{}, f.createCommentErr
 	}
@@ -319,6 +380,7 @@ func (f *fakeGitHubClient) CreateIssueComment(_ context.Context, _ ghclient.Repo
 }
 
 func (f *fakeGitHubClient) UpdateIssueComment(_ context.Context, _ ghclient.Repo, commentID int64, body string) error {
+	f.updateCommentCalls++
 	if f.updateCommentErr != nil {
 		return f.updateCommentErr
 	}
@@ -327,6 +389,7 @@ func (f *fakeGitHubClient) UpdateIssueComment(_ context.Context, _ ghclient.Repo
 }
 
 func (f *fakeGitHubClient) DeleteIssueComment(_ context.Context, _ ghclient.Repo, commentID int64) error {
+	f.deleteCommentCalls++
 	if f.deleteCommentErr != nil {
 		return f.deleteCommentErr
 	}

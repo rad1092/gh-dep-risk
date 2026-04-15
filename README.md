@@ -65,6 +65,7 @@ This repo does not install itself automatically. Build the binary at the reposit
 gh dep-risk pr 123
 gh dep-risk pr https://github.com/OWNER/REPO/pull/123
 gh dep-risk pr --format json
+gh dep-risk pr --bundle-dir ./dep-risk-bundle
 gh dep-risk pr --comment
 gh dep-risk pr --fail-level high
 gh dep-risk version
@@ -85,6 +86,7 @@ If the PR argument is omitted, `gh dep-risk pr` resolves the PR for the current 
 - `--comment`
 - `--fail-level low|medium|high|critical|none`
 - `--no-registry`
+- `--bundle-dir <dir>`
 
 ## Output formats
 
@@ -93,6 +95,13 @@ If the PR argument is omitted, `gh dep-risk pr` resolves the PR for the current 
 - `markdown`: comment-ready output that always starts with `<!-- gh-dep-risk -->`
 
 Korean is the default language. Use `--lang en` for English.
+
+`--bundle-dir` writes a reusable output bundle with:
+
+- `dep-risk-human.txt`
+- `dep-risk.json`
+- `dep-risk.md`
+- `metadata.json`
 
 ## Behavior
 
@@ -148,6 +157,44 @@ Local extension install remains manual:
 ```bash
 gh extension install .
 ```
+
+## Run without local install
+
+You can run the existing CLI engine from GitHub Actions without installing the extension locally.
+
+### From the Actions tab
+
+Use the `dep-risk-manual` workflow and provide:
+
+- `pr`: required PR number or full PR URL
+- `repo`: optional repository override
+- `lang`
+- `fail_level`
+- `comment`
+- `no_registry`
+
+The workflow file must exist on the default branch for the **Run workflow** button to appear.
+
+### From GitHub CLI
+
+```bash
+gh workflow run .github/workflows/dep-risk-manual.yml -f pr=123
+gh workflow run .github/workflows/dep-risk-manual.yml -f pr=https://github.com/OWNER/REPO/pull/123 -f comment=true
+gh run watch
+```
+
+### Results
+
+Each manual run:
+
+- builds and tests the current repo
+- runs `gh-dep-risk` once
+- uploads a bundle artifact containing `dep-risk-human.txt`, `dep-risk.json`, `dep-risk.md`, and `metadata.json`
+- appends the markdown report to the workflow job summary
+
+Find the artifact and step summary on the workflow run page.
+
+If `comment=true`, comment ownership follows the workflow-authenticated identity backed by `GITHUB_TOKEN`.
 
 ## Release
 

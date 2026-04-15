@@ -1,0 +1,132 @@
+name: dep-risk-manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number or full PR URL"
+        required: true
+        type: string
+      repo:
+        description: "Optional repository override (OWNER/REPO)"
+        required: false
+        type: string
+      lang:
+        description: "Output language"
+        required: false
+        default: ko
+        type: choice
+        options:
+          - ko
+          - en
+      fail_level:
+        description: "Fail threshold"
+        required: false
+        default: none
+        type: choice
+        options:
+          - none
+          - low
+          - medium
+          - high
+          - critical
+      comment:
+        description: "Upsert a PR timeline comment"
+        required: false
+        default: false
+        type: boolean
+      no_registry:
+        description: "Skip npm registry lookups"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  dep-risk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build gh-dep-risk
+        run: go build -o gh-dep-risk .
+
+      - name: Run gh-dep-risk
+        id: dep_risk
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_REPO: ${{ inputs.repo }}
+          DEFAULT_REPO: ${{ github.repository }}
+        run: |
+          set +e
+
+          if [[ -n "$INPUT_REPO" ]]; then
+            export GH_REPO="$INPUT_REPO"
+          else
+            export GH_REPO="$DEFAULT_REPO"
+          fi
+
+          bundle_dir="$RUNNER_TEMP/dep-risk-bundle"
+          rm -rf "$bundle_dir"
+
+          args=(
+            pr
+            "${{ inputs.pr }}"
+            --lang "${{ inputs.lang }}"
+            --fail-level "${{ inputs.fail_level }}"
+            --bundle-dir "$bundle_dir"
+          )
+
+          if [[ '${{ inputs.comment }}' == 'true' ]]; then
+            args+=(--comment)
+          fi
+
+          if [[ '${{ inputs.no_registry }}' == 'true' ]]; then
+            args+=(--no-registry)
+          fi
+
+          ./gh-dep-risk "${args[@]}"
+          exit_code=$?
+
+          echo "bundle_dir=$bundle_dir" >> "$GITHUB_OUTPUT"
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Append markdown summary
+        if: always()
+        shell: bash
+        run: |
+          bundle_dir='${{ steps.dep_risk.outputs.bundle_dir }}'
+          if [[ -f "$bundle_dir/dep-risk.md" ]]; then
+            cat "$bundle_dir/dep-risk.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "gh-dep-risk did not produce a markdown bundle." >> "$GITHUB_STEP_SUMMARY"
+            echo "CLI exit code: ${{ steps.dep_risk.outputs.exit_code }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload dep-risk bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dep-risk-bundle
+          path: ${{ steps.dep_risk.outputs.bundle_dir }}
+          if-no-files-found: warn
+
+      - name: Surface dep-risk exit code
+        if: always() && steps.dep_risk.outputs.exit_code != '' && steps.dep_risk.outputs.exit_code != '0'
+        shell: bash
+        run: |
+          echo "gh-dep-risk exited with code ${{ steps.dep_risk.outputs.exit_code }}" >&2
+          exit "${{ steps.dep_risk.outputs.exit_code }}"
