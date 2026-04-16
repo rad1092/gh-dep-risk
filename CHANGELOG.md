@@ -4,7 +4,8 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 ## Unreleased
 
-- No unreleased changes yet.
+- Added an MIT `LICENSE` file and aligned contributor-facing docs with the
+  repository's open source license.
 
 ## v0.1.4
 

@@ -383,3 +383,7 @@ The release workflow:
 - publishes precompiled binaries for GitHub CLI extension installs
 
 For the exact first release procedure, see [RELEASING.md](RELEASING.md).
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
