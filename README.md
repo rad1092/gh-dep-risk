@@ -1,6 +1,6 @@
 # gh-dep-risk
 
-[![test](https://github.com/rad1092/dep-risk/actions/workflows/test.yml/badge.svg)](https://github.com/rad1092/dep-risk/actions/workflows/test.yml)
+[![test](https://github.com/rad1092/gh-dep-risk/actions/workflows/test.yml/badge.svg)](https://github.com/rad1092/gh-dep-risk/actions/workflows/test.yml)
 
 `gh-dep-risk` is a precompiled GitHub CLI extension that reviewers run on
 demand to summarize npm dependency risk in pull requests.
@@ -39,7 +39,7 @@ GitHub Enterprise.
 ### Install from GitHub
 
 ```bash
-gh extension install rad1092/dep-risk
+gh extension install rad1092/gh-dep-risk
 ```
 
 Upgrade later with:
@@ -66,8 +66,9 @@ gh extension install .
 
 This repo does not install itself automatically. Build the binary at the
 repository root first, then run `gh extension install .` manually.
-The remote repository is named `dep-risk`, but the installed command remains
-`gh dep-risk`.
+The installed command remains `gh dep-risk`.
+The repository itself also needs the `gh-` prefix because GitHub CLI extension
+install requires remote extension repositories to start with `gh-`.
 The checkout directory name must still start with `gh-` for local extension
 install to work, so use a local folder such as `gh-dep-risk` when you clone
 for extension testing.

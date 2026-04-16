@@ -81,7 +81,7 @@ After the `release` workflow finishes:
 Use a clean shell or another machine if possible:
 
 ```bash
-gh extension install rad1092/dep-risk
+gh extension install rad1092/gh-dep-risk
 gh dep-risk version
 gh dep-risk version --json
 ```
