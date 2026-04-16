@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -33,5 +35,13 @@ func TestFlagConsumesValue(t *testing.T) {
 		if flagConsumesValue(token) {
 			t.Fatalf("expected %s to be treated as a boolean flag", token)
 		}
+	}
+}
+
+func TestPrintPRUsageShowsEnglishDefaultLanguage(t *testing.T) {
+	var output bytes.Buffer
+	printPRUsage(&output)
+	if !strings.Contains(output.String(), `output language: ko|en (default "en")`) {
+		t.Fatalf("expected help output to mention english default, got %q", output.String())
 	}
 }

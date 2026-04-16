@@ -33,6 +33,7 @@ the extension in your own GitHub CLI setup:
 gh extension install .
 ```
 
+The checkout directory name must start with `gh-` for local install to work.
 Do not assume this is part of automated tests.
 
 ## Tests and fixtures

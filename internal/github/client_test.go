@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -68,4 +70,116 @@ func TestResolveCurrentPRBranchError(t *testing.T) {
 	if err.Error() != "resolve current PR: determine current branch: empty branch name" {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestListRepositoryFilesFromTreeFallsBackWhenRecursiveTreeTruncated(t *testing.T) {
+	calls := make([]string, 0)
+	responses := map[string]gitTreeResponse{
+		"head|true": {
+			Truncated: true,
+			Tree: []gitTreeEntry{
+				{Path: "README.md", Type: "blob"},
+				{Path: "apps", Type: "tree", SHA: "sha-apps"},
+			},
+		},
+		"head|false": {
+			Tree: []gitTreeEntry{
+				{Path: "README.md", Type: "blob"},
+				{Path: "apps", Type: "tree", SHA: "sha-apps"},
+				{Path: "services", Type: "tree", SHA: "sha-services"},
+			},
+		},
+		"sha-services|false": {
+			Tree: []gitTreeEntry{
+				{Path: "api", Type: "tree", SHA: "sha-api"},
+			},
+		},
+		"sha-api|false": {
+			Tree: []gitTreeEntry{
+				{Path: "package-lock.json", Type: "blob"},
+				{Path: "package.json", Type: "blob"},
+				{Path: "package.json", Type: "blob"},
+			},
+		},
+		"sha-apps|false": {
+			Tree: []gitTreeEntry{
+				{Path: "ui", Type: "tree", SHA: "sha-ui"},
+				{Path: "web", Type: "tree", SHA: "sha-web"},
+			},
+		},
+		"sha-ui|false": {
+			Tree: []gitTreeEntry{
+				{Path: "package.json", Type: "blob"},
+			},
+		},
+		"sha-web|false": {
+			Tree: []gitTreeEntry{
+				{Path: "package.json", Type: "blob"},
+				{Path: "src", Type: "tree", SHA: "sha-web-src"},
+			},
+		},
+		"sha-web-src|false": {
+			Tree: []gitTreeEntry{
+				{Path: "index.ts", Type: "blob"},
+			},
+		},
+	}
+
+	files, err := listRepositoryFilesFromTree(context.Background(), "head", func(_ context.Context, ref string, recursive bool) (gitTreeResponse, error) {
+		key := ref + "|" + strconvFormatBool(recursive)
+		calls = append(calls, key)
+		resp, ok := responses[key]
+		if !ok {
+			return gitTreeResponse{}, errors.New("unexpected tree fetch: " + key)
+		}
+		return resp, nil
+	})
+	if err != nil {
+		t.Fatalf("listRepositoryFilesFromTree returned error: %v", err)
+	}
+
+	want := []string{
+		"README.md",
+		"apps/ui/package.json",
+		"apps/web/package.json",
+		"apps/web/src/index.ts",
+		"services/api/package-lock.json",
+		"services/api/package.json",
+	}
+	if !reflect.DeepEqual(files, want) {
+		t.Fatalf("unexpected files: got %#v want %#v", files, want)
+	}
+	if len(calls) < 2 || calls[0] != "head|true" || calls[1] != "head|false" {
+		t.Fatalf("expected recursive fetch followed by non-recursive fallback, got %#v", calls)
+	}
+}
+
+func TestListRepositoryFilesFromTreeFailsWhenSubtreeRemainsTruncated(t *testing.T) {
+	_, err := listRepositoryFilesFromTree(context.Background(), "head", func(_ context.Context, ref string, recursive bool) (gitTreeResponse, error) {
+		switch ref + "|" + strconvFormatBool(recursive) {
+		case "head|true":
+			return gitTreeResponse{Truncated: true}, nil
+		case "head|false":
+			return gitTreeResponse{
+				Tree: []gitTreeEntry{{Path: "apps", Type: "tree", SHA: "sha-apps"}},
+			}, nil
+		case "sha-apps|false":
+			return gitTreeResponse{Truncated: true}, nil
+		default:
+			return gitTreeResponse{}, errors.New("unexpected tree fetch")
+		}
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "truncated even without recursion") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func strconvFormatBool(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }

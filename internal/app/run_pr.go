@@ -67,27 +67,28 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 	if err != nil {
 		return wrapGitHubError(err)
 	}
-	files, err := deps.GitHub.ListPullRequestFiles(ctx, repo, prNumber)
-	if err != nil {
-		return wrapGitHubError(err)
-	}
 
 	cache := newRepoDataCache(deps.GitHub, repo)
 	targets, err := discoverTargets(ctx, cache, pr.BaseSHA, pr.HeadSHA)
 	if err != nil {
 		return wrapGitHubError(err)
 	}
+	selectedTargets, err := filterTargetsByRequestedPaths(targets, opts.Paths)
+	if err != nil {
+		return &ExitError{Code: 1, Err: err}
+	}
 	if opts.ListTargets {
-		if _, err := io.WriteString(deps.Stdout, formatTargets(targets)); err != nil {
+		if _, err := io.WriteString(deps.Stdout, formatTargets(selectedTargets)); err != nil {
 			return &ExitError{Code: 1, Err: err}
 		}
 		return nil
 	}
 
-	selectedTargets, err := selectTargets(targets, files, opts.Paths)
+	files, err := deps.GitHub.ListPullRequestFiles(ctx, repo, prNumber)
 	if err != nil {
-		return &ExitError{Code: 1, Err: err}
+		return wrapGitHubError(err)
 	}
+	selectedTargets = selectChangedTargets(selectedTargets, files)
 	if len(selectedTargets) == 0 {
 		return &ExitError{Code: 2, Err: errors.New("no supported npm dependency change found")}
 	}

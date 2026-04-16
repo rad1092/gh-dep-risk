@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/url"
 	"os/exec"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -100,6 +101,19 @@ type Client interface {
 }
 
 type APIClient struct{}
+
+type gitTreeEntry struct {
+	Path string `json:"path"`
+	Type string `json:"type"`
+	SHA  string `json:"sha"`
+}
+
+type gitTreeResponse struct {
+	Tree      []gitTreeEntry `json:"tree"`
+	Truncated bool           `json:"truncated"`
+}
+
+type gitTreeFetcher func(ctx context.Context, ref string, recursive bool) (gitTreeResponse, error)
 
 func NewClient() *APIClient {
 	return &APIClient{}
@@ -322,25 +336,13 @@ func (c *APIClient) ListRepositoryFiles(ctx context.Context, repo Repo, ref stri
 		return nil, classifyAuthError(err)
 	}
 
-	var resp struct {
-		Tree []struct {
-			Path string `json:"path"`
-			Type string `json:"type"`
-		} `json:"tree"`
+	files, err := listRepositoryFilesFromTree(ctx, ref, func(ctx context.Context, treeRef string, recursive bool) (gitTreeResponse, error) {
+		resp, err := c.fetchGitTree(ctx, client, repo, treeRef, recursive)
+		return resp, classifyAuthError(err)
+	})
+	if err != nil {
+		return nil, err
 	}
-	path := fmt.Sprintf("repos/%s/%s/git/trees/%s?recursive=1", repo.Owner, repo.Name, url.PathEscape(ref))
-	if err := client.DoWithContext(ctx, "GET", path, nil, &resp); err != nil {
-		return nil, classifyAuthError(err)
-	}
-
-	files := make([]string, 0, len(resp.Tree))
-	for _, entry := range resp.Tree {
-		if entry.Type != "blob" || strings.TrimSpace(entry.Path) == "" {
-			continue
-		}
-		files = append(files, entry.Path)
-	}
-	sort.Strings(files)
 	return files, nil
 }
 
@@ -467,6 +469,123 @@ func (c *APIClient) restClient(repo Repo) (*api.RESTClient, error) {
 			"X-GitHub-Api-Version": apiVersion,
 		},
 	})
+}
+
+func (c *APIClient) fetchGitTree(ctx context.Context, client *api.RESTClient, repo Repo, ref string, recursive bool) (gitTreeResponse, error) {
+	var resp gitTreeResponse
+	treePath := fmt.Sprintf("repos/%s/%s/git/trees/%s", repo.Owner, repo.Name, url.PathEscape(ref))
+	if recursive {
+		treePath += "?recursive=1"
+	}
+	if err := client.DoWithContext(ctx, "GET", treePath, nil, &resp); err != nil {
+		return gitTreeResponse{}, err
+	}
+	return resp, nil
+}
+
+func listRepositoryFilesFromTree(ctx context.Context, ref string, fetch gitTreeFetcher) ([]string, error) {
+	recursiveTree, err := fetch(ctx, ref, true)
+	if err != nil {
+		return nil, err
+	}
+	if !recursiveTree.Truncated {
+		return sortedUniqueBlobPaths(recursiveTree.Tree), nil
+	}
+
+	rootTree, err := fetch(ctx, ref, false)
+	if err != nil {
+		return nil, err
+	}
+	if rootTree.Truncated {
+		return nil, fmt.Errorf("repository tree %q is truncated even without recursion", ref)
+	}
+
+	files := make([]string, 0, len(rootTree.Tree))
+	queue := make([]gitTreeEntry, 0, len(rootTree.Tree))
+	for _, entry := range rootTree.Tree {
+		switch entry.Type {
+		case "blob":
+			files = appendJoinedBlobPath(files, "", entry.Path)
+		case "tree":
+			queue = append(queue, entry)
+		}
+	}
+
+	for len(queue) > 0 {
+		entry := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+
+		if strings.TrimSpace(entry.SHA) == "" {
+			return nil, fmt.Errorf("repository subtree %q is missing a tree SHA", entry.Path)
+		}
+
+		subtree, err := fetch(ctx, entry.SHA, false)
+		if err != nil {
+			return nil, err
+		}
+		if subtree.Truncated {
+			return nil, fmt.Errorf("repository subtree %q (%s) is truncated even without recursion", entry.Path, entry.SHA)
+		}
+
+		for _, child := range subtree.Tree {
+			joinedPath := joinRepoPath(entry.Path, child.Path)
+			switch child.Type {
+			case "blob":
+				files = appendJoinedBlobPath(files, entry.Path, child.Path)
+			case "tree":
+				queue = append(queue, gitTreeEntry{Path: joinedPath, Type: child.Type, SHA: child.SHA})
+			}
+		}
+	}
+
+	return sortedUniquePaths(files), nil
+}
+
+func appendJoinedBlobPath(files []string, prefix, entryPath string) []string {
+	joinedPath := joinRepoPath(prefix, entryPath)
+	if joinedPath == "" {
+		return files
+	}
+	return append(files, joinedPath)
+}
+
+func joinRepoPath(prefix, entryPath string) string {
+	trimmedEntry := strings.TrimSpace(entryPath)
+	if trimmedEntry == "" {
+		return ""
+	}
+	if strings.TrimSpace(prefix) == "" {
+		return path.Clean(trimmedEntry)
+	}
+	return path.Clean(path.Join(prefix, trimmedEntry))
+}
+
+func sortedUniqueBlobPaths(entries []gitTreeEntry) []string {
+	files := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Type != "blob" {
+			continue
+		}
+		files = appendJoinedBlobPath(files, "", entry.Path)
+	}
+	return sortedUniquePaths(files)
+}
+
+func sortedUniquePaths(paths []string) []string {
+	seen := make(map[string]struct{}, len(paths))
+	unique := make([]string, 0, len(paths))
+	for _, filePath := range paths {
+		if strings.TrimSpace(filePath) == "" {
+			continue
+		}
+		if _, ok := seen[filePath]; ok {
+			continue
+		}
+		seen[filePath] = struct{}{}
+		unique = append(unique, filePath)
+	}
+	sort.Strings(unique)
+	return unique
 }
 
 func escapeContentPath(path string) string {

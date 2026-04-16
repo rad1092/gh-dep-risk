@@ -66,6 +66,8 @@ gh extension install .
 
 This repo does not install itself automatically. Build the binary at the
 repository root first, then run `gh extension install .` manually.
+The checkout directory name must start with `gh-` for local extension install
+to work.
 
 ## Commands
 
@@ -155,7 +157,7 @@ Dependency review available: false
 - `markdown`: comment-ready output that always starts with
   `<!-- gh-dep-risk -->`
 
-Korean is the default language. Use `--lang en` for English.
+English is the default language. Use `--lang ko` for Korean.
 
 `--bundle-dir` writes:
 
@@ -205,7 +207,8 @@ Notes:
 
 - `--path` accepts either a directory or a `package.json` path and can be
   repeated
-- `--list-targets` prints detected targets and exits without running analysis
+- `--list-targets` prints detected targets, validates any `--path` filters, and
+  exits without running PR file analysis or dependency review
 - npm workspaces reuse the shared root `package-lock.json`
 - if a lockfile-only workspace change cannot be mapped exactly, the report calls
   out that attribution is approximate instead of failing

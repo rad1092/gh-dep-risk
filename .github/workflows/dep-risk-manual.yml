@@ -14,7 +14,7 @@ on:
       lang:
         description: "Output language"
         required: false
-        default: ko
+        default: en
         type: choice
         options:
           - ko

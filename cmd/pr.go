@@ -35,7 +35,7 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 
 	fs.StringVar(&opts.Repo, "repo", "", "repository in OWNER/REPO form")
 	fs.StringVar(&opts.Format, "format", "human", "output format: human|json|markdown")
-	fs.StringVar(&opts.Lang, "lang", "ko", "output language: ko|en")
+	fs.StringVar(&opts.Lang, "lang", "en", "output language: ko|en")
 	fs.BoolVar(&opts.Comment, "comment", false, "upsert a PR timeline comment")
 	fs.StringVar(&failLevel, "fail-level", string(analysis.RiskLevelNone), "fail threshold: low|medium|high|critical|none")
 	fs.BoolVar(&opts.NoRegistry, "no-registry", false, "skip npm registry lookups")
@@ -166,7 +166,7 @@ func printPRUsage(w io.Writer) {
 	fmt.Fprintln(w, "  -format string")
 	fmt.Fprintln(w, "    \toutput format: human|json|markdown (default \"human\")")
 	fmt.Fprintln(w, "  -lang string")
-	fmt.Fprintln(w, "    \toutput language: ko|en (default \"ko\")")
+	fmt.Fprintln(w, "    \toutput language: ko|en (default \"en\")")
 	fmt.Fprintln(w, "  -comment")
 	fmt.Fprintln(w, "    \tupsert a PR timeline comment")
 	fmt.Fprintln(w, "  -fail-level string")

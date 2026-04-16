@@ -259,6 +259,54 @@ func TestRunPRListTargets(t *testing.T) {
 	}
 }
 
+func TestRunPRListTargetsSkipsAnalysisAndCommentPaths(t *testing.T) {
+	client := newWorkspaceFakeGitHubClient(t)
+	registry := &fakeRegistryClient{}
+	bundleDir := t.TempDir()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := RunPR(context.Background(), RunPRDependencies{
+		GitHub:   client,
+		Registry: registry,
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+	}, RunPROptions{
+		ListTargets: true,
+		Paths:       []string{"apps/web"},
+		Comment:     true,
+		BundleDir:   bundleDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "workspace\tapps/web\tapps/web/package.json\tpackage-lock.json") {
+		t.Fatalf("expected filtered target output, got %q", stdout.String())
+	}
+	if client.listPullRequestCalls != 0 {
+		t.Fatalf("expected no PR file listing, got %d", client.listPullRequestCalls)
+	}
+	if client.compareCalls != 0 {
+		t.Fatalf("expected no dependency review calls, got %d", client.compareCalls)
+	}
+	if client.viewerLoginCalls != 0 {
+		t.Fatalf("expected no viewer resolution, got %d", client.viewerLoginCalls)
+	}
+	if client.listCommentsCalls != 0 || client.createCommentCalls != 0 || client.updateCommentCalls != 0 || client.deleteCommentCalls != 0 {
+		t.Fatalf("expected no comment upsert activity, got list=%d create=%d update=%d delete=%d", client.listCommentsCalls, client.createCommentCalls, client.updateCommentCalls, client.deleteCommentCalls)
+	}
+	if registry.calls != 0 {
+		t.Fatalf("expected no registry lookups, got %d", registry.calls)
+	}
+	entries, readErr := os.ReadDir(bundleDir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no bundle files, got %#v", entries)
+	}
+}
+
 func TestRunPRPathFiltering(t *testing.T) {
 	client := newWorkspaceFakeGitHubClient(t)
 	client.files = []ghclient.PullRequestFile{
@@ -654,4 +702,13 @@ func readFixture(t *testing.T, name string) []byte {
 
 func fileKey(path, ref string) string {
 	return path + "@" + ref
+}
+
+type fakeRegistryClient struct {
+	calls int
+}
+
+func (f *fakeRegistryClient) PublishedAt(context.Context, string, string) (time.Time, error) {
+	f.calls++
+	return time.Time{}, errors.New("unexpected registry lookup")
 }

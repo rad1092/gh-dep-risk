@@ -21,7 +21,7 @@ go test ./...
 Linux or macOS:
 
 ```bash
-VERSION=v0.1.0
+VERSION=vX.Y.Z
 COMMIT=$(git rev-parse --short HEAD)
 DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 go build -ldflags "-s -w -X gh-dep-risk/cmd.version=${VERSION} -X gh-dep-risk/cmd.commit=${COMMIT} -X gh-dep-risk/cmd.date=${DATE}" -o gh-dep-risk .
@@ -32,7 +32,7 @@ go build -ldflags "-s -w -X gh-dep-risk/cmd.version=${VERSION} -X gh-dep-risk/cm
 Windows PowerShell:
 
 ```powershell
-$version = "v0.1.0"
+$version = "vX.Y.Z"
 $commit = git rev-parse --short HEAD
 $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 go build -ldflags "-s -w -X gh-dep-risk/cmd.version=$version -X gh-dep-risk/cmd.commit=$commit -X gh-dep-risk/cmd.date=$date" -o gh-dep-risk.exe .
@@ -58,11 +58,11 @@ Then verify:
 If GitHub auth or repository context is unavailable, skip this step and perform
 it later from the default branch after pushing.
 
-## 5. Create and push `v0.1.0`
+## 5. Create and push the release tag
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 Do not create the tag until the branch you want to release is already on
@@ -72,7 +72,7 @@ Do not create the tag until the branch you want to release is already on
 
 After the `release` workflow finishes:
 
-- open the GitHub release page for `v0.1.0`
+- open the GitHub release page for the new tag
 - verify precompiled binaries are attached for the expected platforms
 - verify the generated release notes look sensible
 
@@ -86,7 +86,7 @@ gh dep-risk version
 gh dep-risk version --json
 ```
 
-Verify the version is `v0.1.0` and does not report only `dev`.
+Verify the version matches the new release tag and does not report only `dev`.
 
 ## 8. Verify upgrade flow
 

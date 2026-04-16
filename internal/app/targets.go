@@ -187,32 +187,36 @@ func discoverTargets(ctx context.Context, cache *repoDataCache, baseRef, headRef
 	return targets, nil
 }
 
-func selectTargets(targets []analysis.AnalysisTarget, files []ghclient.PullRequestFile, requested []string) ([]analysis.AnalysisTarget, error) {
-	if len(requested) > 0 {
-		index := map[string]analysis.AnalysisTarget{}
-		for _, target := range targets {
-			index[target.ManifestPath] = target
-		}
-		selected := make([]analysis.AnalysisTarget, 0, len(requested))
-		seen := map[string]struct{}{}
-		for _, raw := range requested {
-			manifestPath := normalizeRequestedManifestPath(raw)
-			target, ok := index[manifestPath]
-			if !ok {
-				return nil, fmt.Errorf("unknown npm target path %q", raw)
-			}
-			if _, ok := seen[target.ManifestPath]; ok {
-				continue
-			}
-			seen[target.ManifestPath] = struct{}{}
-			selected = append(selected, target)
-		}
-		sort.Slice(selected, func(i, j int) bool {
-			return selected[i].ManifestPath < selected[j].ManifestPath
-		})
-		return selected, nil
+func filterTargetsByRequestedPaths(targets []analysis.AnalysisTarget, requested []string) ([]analysis.AnalysisTarget, error) {
+	if len(requested) == 0 {
+		return append([]analysis.AnalysisTarget(nil), targets...), nil
 	}
 
+	index := map[string]analysis.AnalysisTarget{}
+	for _, target := range targets {
+		index[target.ManifestPath] = target
+	}
+	selected := make([]analysis.AnalysisTarget, 0, len(requested))
+	seen := map[string]struct{}{}
+	for _, raw := range requested {
+		manifestPath := normalizeRequestedManifestPath(raw)
+		target, ok := index[manifestPath]
+		if !ok {
+			return nil, fmt.Errorf("unknown npm target path %q", raw)
+		}
+		if _, ok := seen[target.ManifestPath]; ok {
+			continue
+		}
+		seen[target.ManifestPath] = struct{}{}
+		selected = append(selected, target)
+	}
+	sort.Slice(selected, func(i, j int) bool {
+		return selected[i].ManifestPath < selected[j].ManifestPath
+	})
+	return selected, nil
+}
+
+func selectChangedTargets(targets []analysis.AnalysisTarget, files []ghclient.PullRequestFile) []analysis.AnalysisTarget {
 	changed := map[string]struct{}{}
 	for _, file := range files {
 		changed[normalizeRepoPath(file.Filename)] = struct{}{}
@@ -227,7 +231,7 @@ func selectTargets(targets []analysis.AnalysisTarget, files []ghclient.PullReque
 			selected = append(selected, target)
 		}
 	}
-	return selected, nil
+	return selected
 }
 
 func formatTargets(targets []analysis.AnalysisTarget) string {
