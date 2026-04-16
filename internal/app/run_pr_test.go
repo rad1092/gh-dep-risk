@@ -378,6 +378,39 @@ func TestRunPRAggregatesMultipleTargets(t *testing.T) {
 	}
 }
 
+func TestRunPRDedupesSharedWorkspaceTransitiveCount(t *testing.T) {
+	client := newSharedTransitiveWorkspaceFakeGitHubClient(t)
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{Format: "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var payload render.JSONReport
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatal(err)
+	}
+	expectedSummary := "2 newly added transitive dependencies were detected."
+	foundSummary := false
+	for _, item := range payload.Summary {
+		if item == expectedSummary {
+			foundSummary = true
+			break
+		}
+	}
+	if !foundSummary {
+		t.Fatalf("expected aggregate summary %q, got %#v", expectedSummary, payload.Summary)
+	}
+	if len(payload.Targets) != 2 {
+		t.Fatalf("expected two targets, got %#v", payload.Targets)
+	}
+	for _, target := range payload.Targets {
+		if target.AddedTransitiveCount != 2 {
+			t.Fatalf("expected target %s to retain per-target transitive count 2, got %d", target.Target.DisplayName, target.AddedTransitiveCount)
+		}
+	}
+}
+
 func TestRunPRDependencyReviewFallbackForSingleTargetMarksAggregate(t *testing.T) {
 	client := newWorkspaceFakeGitHubClient(t)
 	client.files = []ghclient.PullRequestFile{
@@ -552,6 +585,47 @@ func newWorkspaceFakeGitHubClient(t *testing.T) *fakeGitHubClient {
 	client.compareChangesByManifest["services/api/package.json"] = []ghclient.DependencyReviewChange{
 		{Name: "lodash", Manifest: "services/api/package.json", Ecosystem: "npm", ChangeType: "removed", Version: "4.17.20"},
 		{Name: "lodash", Manifest: "services/api/package.json", Ecosystem: "npm", ChangeType: "added", Version: "4.17.21"},
+	}
+	return client
+}
+
+func newSharedTransitiveWorkspaceFakeGitHubClient(t *testing.T) *fakeGitHubClient {
+	t.Helper()
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "Add shared workspace dependency",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "apps/web/package.json", Status: "modified"},
+		{Filename: "packages/ui/package.json", Status: "modified"},
+		{Filename: "package-lock.json", Status: "modified"},
+	}
+	client.repositoryFilesByRef["base-sha"] = []string{
+		"package.json",
+		"package-lock.json",
+		"apps/web/package.json",
+		"packages/ui/package.json",
+	}
+	client.repositoryFilesByRef["head-sha"] = append([]string(nil), client.repositoryFilesByRef["base-sha"]...)
+	client.filesByKey[fileKey("package.json", "base-sha")] = readFixture(t, "workspace.shared.root.package.json")
+	client.filesByKey[fileKey("package.json", "head-sha")] = readFixture(t, "workspace.shared.root.package.json")
+	client.filesByKey[fileKey("package-lock.json", "base-sha")] = readFixture(t, "workspace.shared.root.base.package-lock.json")
+	client.filesByKey[fileKey("package-lock.json", "head-sha")] = readFixture(t, "workspace.shared.root.head.package-lock.json")
+	client.filesByKey[fileKey("apps/web/package.json", "base-sha")] = readFixture(t, "workspace.shared.apps-web.base.package.json")
+	client.filesByKey[fileKey("apps/web/package.json", "head-sha")] = readFixture(t, "workspace.shared.apps-web.head.package.json")
+	client.filesByKey[fileKey("packages/ui/package.json", "base-sha")] = readFixture(t, "workspace.shared.packages-ui.base.package.json")
+	client.filesByKey[fileKey("packages/ui/package.json", "head-sha")] = readFixture(t, "workspace.shared.packages-ui.head.package.json")
+	client.compareChangesByManifest["apps/web/package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "axios", Manifest: "apps/web/package.json", Ecosystem: "npm", ChangeType: "added", Version: "1.7.0"},
+	}
+	client.compareChangesByManifest["packages/ui/package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "axios", Manifest: "packages/ui/package.json", Ecosystem: "npm", ChangeType: "added", Version: "1.7.0"},
 	}
 	return client
 }

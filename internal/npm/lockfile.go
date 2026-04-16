@@ -334,19 +334,26 @@ func (l *Lockfile) CollectTargetPackages(targetDir string, directNames []string)
 }
 
 func (l *Lockfile) AddedTransitiveCountForTarget(base *Lockfile, targetDir string, directNames []string) (int, bool) {
+	paths, approximate := l.AddedTransitivePathsForTarget(base, targetDir, directNames)
+	return len(paths), approximate
+}
+
+func (l *Lockfile) AddedTransitivePathsForTarget(base *Lockfile, targetDir string, directNames []string) ([]string, bool) {
 	headView := l.CollectTargetPackages(targetDir, directNames)
 	if base == nil {
-		return len(headView.Transitive), headView.Approximate
+		paths := sortedPackagePaths(headView.Transitive)
+		return paths, headView.Approximate
 	}
 	baseView := base.CollectTargetPackages(targetDir, directNames)
-	count := 0
+	added := make([]string, 0, len(headView.Transitive))
 	for pkgPath := range headView.Transitive {
 		if _, ok := baseView.Transitive[pkgPath]; ok {
 			continue
 		}
-		count++
+		added = append(added, pkgPath)
 	}
-	return count, headView.Approximate || baseView.Approximate
+	sort.Strings(added)
+	return added, headView.Approximate || baseView.Approximate
 }
 
 func StripVersionPrefix(version string) string {
@@ -435,6 +442,15 @@ func sortedDependencyNames(deps map[string]string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func sortedPackagePaths(packages map[string]LockPackage) []string {
+	paths := make([]string, 0, len(packages))
+	for pkgPath := range packages {
+		paths = append(paths, pkgPath)
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func pathsAsDependencyMap(packages map[string]LockPackage) map[string]string {

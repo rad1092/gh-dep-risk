@@ -55,24 +55,28 @@ func TestAnalyzeScoresAndCaps(t *testing.T) {
 func TestAggregateResultsAcrossTargets(t *testing.T) {
 	targets := []TargetAnalysisResult{
 		{
-			Target:              AnalysisTarget{DisplayName: "apps/web", ManifestPath: "apps/web/package.json", LockfilePath: "package-lock.json", Kind: TargetKindWorkspace},
-			Score:               48,
-			Level:               RiskLevelHigh,
-			BlastRadius:         BlastRadiusMedium,
-			ChangedDependencies: []DependencyChange{{Name: "axios", Target: "apps/web", Score: 48, RiskDrivers: []string{DriverAddedDirectRuntime}}},
-			RiskDrivers:         []string{DriverAddedDirectRuntime},
-			RecommendedActions:  []string{ActionRunTargetedTests},
-			QuickCommands:       []string{"cd apps/web && npm ls axios"},
+			Target:               AnalysisTarget{DisplayName: "apps/web", ManifestPath: "apps/web/package.json", LockfilePath: "package-lock.json", Kind: TargetKindWorkspace},
+			Score:                48,
+			Level:                RiskLevelHigh,
+			BlastRadius:          BlastRadiusMedium,
+			ChangedDependencies:  []DependencyChange{{Name: "axios", Target: "apps/web", Score: 48, RiskDrivers: []string{DriverAddedDirectRuntime}}},
+			RiskDrivers:          []string{DriverAddedDirectRuntime},
+			RecommendedActions:   []string{ActionRunTargetedTests},
+			QuickCommands:        []string{"cd apps/web && npm ls axios"},
+			AddedTransitiveCount: 2,
+			addedTransitiveKeys:  []string{"node_modules/follow-redirects", "node_modules/form-data"},
 		},
 		{
-			Target:              AnalysisTarget{DisplayName: "packages/ui", ManifestPath: "packages/ui/package.json", LockfilePath: "package-lock.json", Kind: TargetKindWorkspace},
-			Score:               22,
-			Level:               RiskLevelMedium,
-			BlastRadius:         BlastRadiusLow,
-			ChangedDependencies: []DependencyChange{{Name: "tailwind-merge", Target: "packages/ui", Score: 22, RiskDrivers: []string{DriverAddedDirectRuntime}}},
-			RiskDrivers:         []string{DriverAddedDirectRuntime},
-			RecommendedActions:  []string{ActionRunTargetedTests},
-			QuickCommands:       []string{"cd packages/ui && npm ls tailwind-merge"},
+			Target:               AnalysisTarget{DisplayName: "packages/ui", ManifestPath: "packages/ui/package.json", LockfilePath: "package-lock.json", Kind: TargetKindWorkspace},
+			Score:                22,
+			Level:                RiskLevelMedium,
+			BlastRadius:          BlastRadiusLow,
+			ChangedDependencies:  []DependencyChange{{Name: "tailwind-merge", Target: "packages/ui", Score: 22, RiskDrivers: []string{DriverAddedDirectRuntime}}},
+			RiskDrivers:          []string{DriverAddedDirectRuntime},
+			RecommendedActions:   []string{ActionRunTargetedTests},
+			QuickCommands:        []string{"cd packages/ui && npm ls tailwind-merge"},
+			AddedTransitiveCount: 1,
+			addedTransitiveKeys:  []string{"node_modules/tailwind-merge/node_modules/postcss"},
 		},
 	}
 
@@ -83,7 +87,51 @@ func TestAggregateResultsAcrossTargets(t *testing.T) {
 	if result.Level != RiskLevelHigh {
 		t.Fatalf("expected aggregate high level, got %s", result.Level)
 	}
+	if result.AddedTransitiveCount != 3 {
+		t.Fatalf("expected deduped transitive count, got %d", result.AddedTransitiveCount)
+	}
 	if len(result.Targets) != 2 || len(result.ChangedDependencies) != 2 {
 		t.Fatalf("expected flattened aggregate result, got %#v", result)
+	}
+}
+
+func TestAggregateResultsDedupesSharedTransitivePathsAcrossTargets(t *testing.T) {
+	targets := []TargetAnalysisResult{
+		{
+			Target: AnalysisTarget{DisplayName: "apps/web", ManifestPath: "apps/web/package.json", LockfilePath: "package-lock.json", Kind: TargetKindWorkspace},
+			Score:  18,
+			Level:  RiskLevelLow,
+			ChangedDependencies: []DependencyChange{
+				{Name: "eslint-config-custom", Target: "apps/web", Scope: ScopeDev, Direct: true, ChangeType: ChangeAdded, Score: 18},
+			},
+			AddedTransitiveCount: 3,
+			addedTransitiveKeys: []string{
+				"node_modules/@eslint/js",
+				"node_modules/eslint-plugin-import",
+				"node_modules/globals",
+			},
+		},
+		{
+			Target: AnalysisTarget{DisplayName: "packages/ui", ManifestPath: "packages/ui/package.json", LockfilePath: "package-lock.json", Kind: TargetKindWorkspace},
+			Score:  18,
+			Level:  RiskLevelLow,
+			ChangedDependencies: []DependencyChange{
+				{Name: "eslint-config-custom", Target: "packages/ui", Scope: ScopeDev, Direct: true, ChangeType: ChangeAdded, Score: 18},
+			},
+			AddedTransitiveCount: 3,
+			addedTransitiveKeys: []string{
+				"node_modules/@eslint/js",
+				"node_modules/eslint-plugin-import",
+				"node_modules/globals",
+			},
+		},
+	}
+
+	result := AggregateResults(targets)
+	if result.AddedTransitiveCount != 3 {
+		t.Fatalf("expected shared transitive paths to count once, got %d", result.AddedTransitiveCount)
+	}
+	if result.BlastRadius != BlastRadiusLow {
+		t.Fatalf("expected deduped aggregate blast radius to stay low, got %s", result.BlastRadius)
 	}
 }

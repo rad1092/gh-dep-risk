@@ -1,0 +1,8 @@
+{
+  "name": "shared-transitive-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

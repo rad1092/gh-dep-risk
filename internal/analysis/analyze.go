@@ -29,6 +29,7 @@ type targetLockViews struct {
 	Base                   npm.TargetPackages
 	Head                   npm.TargetPackages
 	AddedTransitive        int
+	AddedTransitivePaths   []string
 	ApproximateAttribution bool
 }
 
@@ -144,6 +145,7 @@ func Analyze(input Input, publishedAt map[PackageVersion]time.Time) AnalysisResu
 		QuickCommands:             quickCommands(input.Target, changes),
 		Notes:                     uniqueNotes(notes),
 		AddedTransitiveCount:      views.AddedTransitive,
+		addedTransitiveKeys:       append([]string{}, views.AddedTransitivePaths...),
 	}
 }
 
@@ -171,8 +173,8 @@ func AggregateResults(targets []TargetAnalysisResult) AnalysisResult {
 	commands := make([]string, 0)
 	scores := make([]int, 0, len(sortedTargets))
 	dependencyReviewAvailable := true
-	blastRadius := BlastRadiusLow
-	addedTransitive := 0
+	addedTransitiveKeys := map[string]struct{}{}
+	addedTransitiveFallback := 0
 
 	for _, target := range sortedTargets {
 		scores = append(scores, target.Score)
@@ -181,11 +183,14 @@ func AggregateResults(targets []TargetAnalysisResult) AnalysisResult {
 		drivers = append(drivers, target.RiskDrivers...)
 		actions = append(actions, target.RecommendedActions...)
 		commands = append(commands, target.QuickCommands...)
-		addedTransitive += target.AddedTransitiveCount
 		dependencyReviewAvailable = dependencyReviewAvailable && target.DependencyReviewAvailable
-		if blastRadiusRank(target.BlastRadius) > blastRadiusRank(blastRadius) {
-			blastRadius = target.BlastRadius
+		if target.addedTransitiveKeys != nil {
+			for _, key := range target.addedTransitiveKeys {
+				addedTransitiveKeys[key] = struct{}{}
+			}
+			continue
 		}
+		addedTransitiveFallback += target.AddedTransitiveCount
 	}
 
 	sort.Slice(changes, func(i, j int) bool {
@@ -199,11 +204,12 @@ func AggregateResults(targets []TargetAnalysisResult) AnalysisResult {
 	})
 
 	score := aggregateTargetScore(scores)
+	addedTransitive := len(addedTransitiveKeys) + addedTransitiveFallback
 	return AnalysisResult{
 		DependencyReviewAvailable: dependencyReviewAvailable,
 		Score:                     score,
 		Level:                     LevelForScore(score),
-		BlastRadius:               blastRadius,
+		BlastRadius:               deriveBlastRadius(changes, addedTransitive),
 		ChangedDependencies:       changes,
 		RiskDrivers:               uniqueStrings(drivers),
 		RecommendedActions:        uniqueStrings(actions),
@@ -211,6 +217,7 @@ func AggregateResults(targets []TargetAnalysisResult) AnalysisResult {
 		Notes:                     uniqueNotes(notes),
 		AddedTransitiveCount:      addedTransitive,
 		Targets:                   sortedTargets,
+		addedTransitiveKeys:       sortedKeys(addedTransitiveKeys),
 	}
 }
 
@@ -227,6 +234,7 @@ func TargetResult(target AnalysisTarget, result AnalysisResult) TargetAnalysisRe
 		QuickCommands:             append([]string(nil), result.QuickCommands...),
 		Notes:                     append([]Note(nil), result.Notes...),
 		AddedTransitiveCount:      result.AddedTransitiveCount,
+		addedTransitiveKeys:       append([]string{}, result.addedTransitiveKeys...),
 	}
 }
 
@@ -469,7 +477,8 @@ func buildTargetLockViews(input Input, directNames []string) targetLockViews {
 		views.Head = input.HeadLockfile.CollectTargetPackages(targetDir, directNames)
 	}
 	if input.HeadLockfile != nil {
-		views.AddedTransitive, views.ApproximateAttribution = input.HeadLockfile.AddedTransitiveCountForTarget(input.BaseLockfile, targetDir, directNames)
+		views.AddedTransitivePaths, views.ApproximateAttribution = input.HeadLockfile.AddedTransitivePathsForTarget(input.BaseLockfile, targetDir, directNames)
+		views.AddedTransitive = len(views.AddedTransitivePaths)
 	} else {
 		views.ApproximateAttribution = views.Base.Approximate
 	}
@@ -574,17 +583,6 @@ func deriveBlastRadius(changes []DependencyChange, addedTransitiveCount int) Bla
 		return BlastRadiusMedium
 	default:
 		return BlastRadiusLow
-	}
-}
-
-func blastRadiusRank(radius BlastRadius) int {
-	switch radius {
-	case BlastRadiusHigh:
-		return 3
-	case BlastRadiusMedium:
-		return 2
-	default:
-		return 1
 	}
 }
 

@@ -76,6 +76,44 @@ func TestAddedTransitiveCountOnlyCountsNewPaths(t *testing.T) {
 	}
 }
 
+func TestAddedTransitivePathsForTargetReturnsSortedUniquePaths(t *testing.T) {
+	base := &Lockfile{
+		Packages: map[string]LockPackage{
+			"apps/web":            {Path: "apps/web", Name: "web", Dependencies: map[string]string{"direct": "^1.0.0"}},
+			"node_modules/direct": {Path: "node_modules/direct", Name: "direct", Version: "1.0.0", Dependencies: map[string]string{"shared": "^1.0.0"}},
+			"node_modules/shared": {Path: "node_modules/shared", Name: "shared", Version: "1.0.0"},
+			"node_modules/direct/node_modules/nested-existing": {Path: "node_modules/direct/node_modules/nested-existing", Name: "nested-existing", Version: "1.0.0"},
+		},
+	}
+	head := &Lockfile{
+		Packages: map[string]LockPackage{
+			"apps/web":            {Path: "apps/web", Name: "web", Dependencies: map[string]string{"direct": "^1.0.0"}},
+			"node_modules/direct": {Path: "node_modules/direct", Name: "direct", Version: "1.0.0", Dependencies: map[string]string{"added-b": "^1.0.0", "added-a": "^1.0.0", "shared": "^1.0.0"}},
+			"node_modules/shared": {Path: "node_modules/shared", Name: "shared", Version: "1.0.0"},
+			"node_modules/direct/node_modules/nested-existing": {Path: "node_modules/direct/node_modules/nested-existing", Name: "nested-existing", Version: "1.0.0"},
+			"node_modules/direct/node_modules/added-b":         {Path: "node_modules/direct/node_modules/added-b", Name: "added-b", Version: "1.0.0"},
+			"node_modules/direct/node_modules/added-a":         {Path: "node_modules/direct/node_modules/added-a", Name: "added-a", Version: "1.0.0"},
+		},
+	}
+
+	paths, approximate := head.AddedTransitivePathsForTarget(base, "apps/web", []string{"direct"})
+	if approximate {
+		t.Fatalf("expected exact target attribution")
+	}
+	expected := []string{
+		"node_modules/direct/node_modules/added-a",
+		"node_modules/direct/node_modules/added-b",
+	}
+	if len(paths) != len(expected) {
+		t.Fatalf("expected %d added paths, got %d (%v)", len(expected), len(paths), paths)
+	}
+	for i := range expected {
+		if paths[i] != expected[i] {
+			t.Fatalf("expected sorted added path %q at %d, got %q", expected[i], i, paths[i])
+		}
+	}
+}
+
 func TestDetectSourceKind(t *testing.T) {
 	tests := map[string]SourceKind{
 		"https://registry.npmjs.org/left-pad/-/left-pad-1.0.0.tgz": SourceDefaultRegistry,

@@ -161,6 +161,7 @@ type AnalysisResult struct {
 	Notes                     []Note                 `json:"notes,omitempty"`
 	AddedTransitiveCount      int                    `json:"added_transitive_count"`
 	Targets                   []TargetAnalysisResult `json:"targets,omitempty"`
+	addedTransitiveKeys       []string
 }
 
 type TargetAnalysisResult struct {
@@ -175,6 +176,7 @@ type TargetAnalysisResult struct {
 	QuickCommands             []string           `json:"quick_commands"`
 	Notes                     []Note             `json:"notes,omitempty"`
 	AddedTransitiveCount      int                `json:"added_transitive_count"`
+	addedTransitiveKeys       []string
 }
 
 type Input struct {
