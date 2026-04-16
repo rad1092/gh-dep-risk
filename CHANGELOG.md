@@ -6,6 +6,13 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 - No unreleased changes yet.
 
+## v0.1.3
+
+- Restored the `gh-` repository path in docs and the `install-smoke` workflow
+  so remote `gh extension install` continues to work.
+- Polished the release and smoke-test documentation to match the current
+  install, workflow, and verification flow.
+
 ## v0.1.2
 
 - Hardened large-repo target discovery so truncated Git tree responses no
