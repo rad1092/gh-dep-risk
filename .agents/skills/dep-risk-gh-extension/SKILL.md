@@ -10,7 +10,7 @@ Use this skill when working on `gh-dep-risk`, the precompiled GitHub CLI extensi
 ## Mission
 
 - keep the product as a single Go binary
-- keep the MVP npm-only: `package.json` and `package-lock.json`
+- keep the npm-only scope: `package.json` and `package-lock.json`
 - keep the workflow on-demand through `gh dep-risk pr`
 - never introduce a server, webhook receiver, GitHub App, queue, database, dashboard, or web UI
 

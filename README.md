@@ -11,7 +11,7 @@ webhook, queue, database, or dashboard infrastructure.
 
 ## Scope
 
-- npm-only MVP
+- npm-only scope
 - supported files: `package.json`, `package-lock.json`
 - one Go binary
 - dependency review API first, lockfile-only fallback when dependency review

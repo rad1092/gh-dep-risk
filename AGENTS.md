@@ -1,7 +1,7 @@
 # AGENTS
 
 - mission: on-demand npm dependency PR risk summary
-- npm-only MVP scope: support only `package.json` and `package-lock.json`
+- npm-only scope: support only `package.json` and `package-lock.json`
 - keep GitHub I/O in `internal/github`
 - keep orchestration in `internal/app`
 - keep deterministic logic in `internal/analysis` and `internal/npm`

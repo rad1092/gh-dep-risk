@@ -6,6 +6,13 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 - No unreleased changes yet.
 
+## v0.1.4
+
+- Replaced the outdated `npm-only MVP` wording with `npm-only scope` across the
+  repo guidance and primary product docs.
+- Reviewed the Markdown docs against the current release/install behavior and
+  kept the existing release history intact.
+
 ## v0.1.3
 
 - Restored the `gh-` repository path in docs and the `install-smoke` workflow
