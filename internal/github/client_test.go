@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/cli/go-gh/v2/pkg/api"
 )
 
 func TestResolveCurrentPRUsesCurrentBranch(t *testing.T) {
@@ -174,6 +176,16 @@ func TestListRepositoryFilesFromTreeFailsWhenSubtreeRemainsTruncated(t *testing.
 	}
 	if !strings.Contains(err.Error(), "truncated even without recursion") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestClassifyAuthErrorWrapsHTTP401AsAuthError(t *testing.T) {
+	err := classifyAuthError(&api.HTTPError{StatusCode: 401, Message: "bad credentials"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !IsAuthError(err) {
+		t.Fatalf("expected AuthError, got %T", err)
 	}
 }
 

@@ -79,7 +79,12 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_PR: ${{ inputs.pr }}
           INPUT_REPO: ${{ inputs.repo }}
+          INPUT_LANG: ${{ inputs.lang }}
+          INPUT_FAIL_LEVEL: ${{ inputs.fail_level }}
+          INPUT_COMMENT: ${{ inputs.comment }}
+          INPUT_NO_REGISTRY: ${{ inputs.no_registry }}
           DEFAULT_REPO: ${{ github.repository }}
         run: |
           set +e
@@ -95,17 +100,17 @@ jobs:
 
           args=(
             pr
-            "${{ inputs.pr }}"
-            --lang "${{ inputs.lang }}"
-            --fail-level "${{ inputs.fail_level }}"
+            "$INPUT_PR"
+            --lang "$INPUT_LANG"
+            --fail-level "$INPUT_FAIL_LEVEL"
             --bundle-dir "$bundle_dir"
           )
 
-          if [[ '${{ inputs.comment }}' == 'true' ]]; then
+          if [[ "$INPUT_COMMENT" == 'true' ]]; then
             args+=(--comment)
           fi
 
-          if [[ '${{ inputs.no_registry }}' == 'true' ]]; then
+          if [[ "$INPUT_NO_REGISTRY" == 'true' ]]; then
             args+=(--no-registry)
           fi
 

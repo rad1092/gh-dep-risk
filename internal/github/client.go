@@ -304,7 +304,7 @@ func (c *APIClient) compareDependencies(ctx context.Context, repo Repo, baseSHA,
 		path += "?name=" + url.QueryEscape(manifestPath)
 	}
 	if err := client.DoWithContext(ctx, "GET", path, nil, &resp); err != nil {
-		return nil, err
+		return nil, classifyAuthError(err)
 	}
 
 	changes := make([]DependencyReviewChange, 0, len(resp))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -41,6 +42,7 @@ func (c *HTTPRegistryClient) PublishedAt(ctx context.Context, packageName, versi
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return time.Time{}, fmt.Errorf("npm registry returned HTTP %d", resp.StatusCode)
 	}
+	resp.Body = io.NopCloser(io.LimitReader(resp.Body, 1<<20))
 	var payload struct {
 		Time map[string]string `json:"time"`
 	}

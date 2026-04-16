@@ -145,7 +145,7 @@ func cleanWorkspacePatterns(patterns []string) []string {
 }
 
 func cleanWorkspacePattern(pattern string) string {
-	cleaned := path.Clean(path.Clean(pattern))
+	cleaned := path.Clean(pattern)
 	switch cleaned {
 	case ".", "/":
 		return ""
