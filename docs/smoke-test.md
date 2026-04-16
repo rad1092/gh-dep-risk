@@ -4,6 +4,8 @@ These smoke tests are designed for release validation. They assume you are in
 the repository root and have a built binary or an installed extension.
 
 On Windows PowerShell, use `.\gh-dep-risk.exe` instead of `./gh-dep-risk`.
+If you want isolated extension-install testing, set a temporary `GH_CONFIG_DIR`
+before running the install commands.
 
 ## 1. Local CLI run against a real PR
 
@@ -33,7 +35,21 @@ Verify:
   `metadata.json`
 - if multiple targets changed, the artifact also includes `targets/...`
 
-## 3. Comment mode
+## 3. Remote install smoke
+
+```bash
+gh extension install rad1092/gh-dep-risk --force
+gh dep-risk version
+gh dep-risk version --json
+```
+
+Verify:
+
+- the install succeeds from the published release assets
+- the reported version matches the latest tag
+- the command does not report only `dev`
+
+## 4. Comment mode
 
 ```bash
 ./gh-dep-risk pr 123 --comment
@@ -45,7 +61,7 @@ Verify:
 - older duplicate comments owned by the same user are removed
 - marker comments from other authors are not edited or deleted
 
-## 4. Fail-level mode
+## 5. Fail-level mode
 
 ```bash
 ./gh-dep-risk pr 123 --fail-level high
@@ -57,7 +73,7 @@ Verify:
   threshold
 - the report still renders before the exit code is surfaced
 
-## 5. Monorepo target selection
+## 6. Monorepo target selection
 
 ```bash
 ./gh-dep-risk pr 123 --list-targets

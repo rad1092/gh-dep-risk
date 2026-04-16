@@ -15,8 +15,12 @@ go build -o gh-dep-risk .
 ./gh-dep-risk version
 ```
 
-On Windows PowerShell, build `gh-dep-risk.exe` and run
-`.\gh-dep-risk.exe version`.
+Windows PowerShell:
+
+```powershell
+go build -o gh-dep-risk.exe .
+.\gh-dep-risk.exe version
+```
 
 Build with explicit metadata:
 
@@ -34,7 +38,7 @@ gh extension install .
 ```
 
 The checkout directory name must start with `gh-` for local install to work.
-Do not assume this is part of automated tests.
+Do not assume this is part of automated tests or normal unit-test flows.
 
 ## Tests and fixtures
 

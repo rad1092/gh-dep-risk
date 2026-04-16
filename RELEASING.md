@@ -75,6 +75,7 @@ After the `release` workflow finishes:
 - open the GitHub release page for the new tag
 - verify precompiled binaries are attached for the expected platforms
 - verify the generated release notes look sensible
+- verify the release title matches the product name and tag
 
 ## 7. Verify remote install
 
@@ -88,6 +89,9 @@ gh dep-risk version --json
 
 Verify the version matches the new release tag and does not report only `dev`.
 
+If you want to avoid touching your everyday GitHub CLI state, set a temporary
+`GH_CONFIG_DIR` before running the install smoke.
+
 ## 8. Verify upgrade flow
 
 After the extension is already installed:
@@ -97,7 +101,16 @@ gh extension upgrade dep-risk
 gh dep-risk version
 ```
 
-## 9. Self-hosted runner note
+## 9. Verify install smoke workflow
+
+Run the cross-platform workflow if you want an extra post-release check:
+
+```bash
+gh workflow run install-smoke.yml
+gh run watch
+```
+
+## 10. Self-hosted runner note
 
 These workflows use Node 24 based GitHub Actions majors. Keep self-hosted
 runners current; Actions Runner `v2.327.1+` is the practical minimum baseline

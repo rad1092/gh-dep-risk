@@ -66,9 +66,12 @@ gh extension install .
 
 This repo does not install itself automatically. Build the binary at the
 repository root first, then run `gh extension install .` manually.
+
 The installed command remains `gh dep-risk`.
+
 The repository itself also needs the `gh-` prefix because GitHub CLI extension
 install requires remote extension repositories to start with `gh-`.
+
 The checkout directory name must still start with `gh-` for local extension
 install to work, so use a local folder such as `gh-dep-risk` when you clone
 for extension testing.
@@ -356,6 +359,7 @@ Each manual run:
 
 If `comment=true`, comment ownership follows the workflow-authenticated identity
 backed by `GITHUB_TOKEN`.
+
 When the workflow is running in a different repository than the target PR,
 `GITHUB_TOKEN` may not be allowed to write cross-repo comments; in that case
 analysis can still run, but comment mode may exit with code `4`.
