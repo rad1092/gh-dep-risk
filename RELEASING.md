@@ -1,6 +1,6 @@
 # Releasing
 
-This document covers the first public release flow for `gh-dep-risk`.
+This document covers the release flow for `gh-dep-risk`.
 
 ## 1. Verify a clean tree
 
@@ -81,7 +81,7 @@ After the `release` workflow finishes:
 Use a clean shell or another machine if possible:
 
 ```bash
-gh extension install rad1092/gh-dep-risk
+gh extension install rad1092/dep-risk
 gh dep-risk version
 gh dep-risk version --json
 ```

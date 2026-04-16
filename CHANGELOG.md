@@ -6,6 +6,15 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 - No unreleased changes yet.
 
+## v0.1.2
+
+- Hardened large-repo target discovery so truncated Git tree responses no
+  longer silently drop npm targets.
+- Fixed dependency-review auth classification and workflow input handling so
+  auth and permission failures surface consistently and safely.
+- Deduplicated aggregate transitive dependency counts across workspace targets
+  that share a root lockfile.
+
 ## v0.1.1
 
 - Added the cross-platform `install-smoke` workflow to validate released
