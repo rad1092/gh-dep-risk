@@ -1,0 +1,5 @@
+# Sensitive paths
+/.github/CODEOWNERS @rad1092
+/.github/workflows/ @rad1092
+/internal/github/ @rad1092
+/scripts/ @rad1092
