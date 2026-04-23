@@ -4,6 +4,8 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 ## Unreleased
 
+## v0.1.8
+
 - Fixed local fallback against large repository lockfiles fetched from the
   GitHub contents API by following blob-backed `encoding: none` responses for
   files such as large `yarn.lock` and `pnpm-lock.yaml`.
