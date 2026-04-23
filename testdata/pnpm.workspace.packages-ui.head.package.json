@@ -1,0 +1,8 @@
+{
+  "name": "@repo/ui",
+  "dependencies": {
+    "@repo/shared": "workspace:*",
+    "react": "^18.2.0",
+    "tailwind-merge": "^2.3.0"
+  }
+}

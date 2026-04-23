@@ -87,6 +87,7 @@ type AnalysisTarget struct {
 	LockfilePath      string     `json:"lockfile_path"`
 	Kind              TargetKind `json:"kind"`
 	WorkspaceRootPath string     `json:"workspace_root_path,omitempty"`
+	PackageManager    string     `json:"-"`
 }
 
 func (t AnalysisTarget) Directory() string {
@@ -240,7 +241,7 @@ func CollectRegistryTargets(input Input) []PackageVersion {
 	candidates := collectCandidateSummaries(input, buildTargetLockViews(input, directNames), directNames)
 	seen := map[PackageVersion]struct{}{}
 	for _, candidate := range candidates {
-		if candidate.ToVersion == "" {
+		if candidate.ToVersion == "" || candidate.HeadPackage.WorkspaceLocal {
 			continue
 		}
 		seen[PackageVersion{Name: candidate.Name, Version: candidate.ToVersion}] = struct{}{}

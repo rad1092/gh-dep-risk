@@ -1,0 +1,38 @@
+lockfileVersion: '9.0'
+importers:
+  .: {}
+  apps/web:
+    dependencies:
+      axios:
+        specifier: ^1.7.0
+        version: 1.7.0
+      react:
+        specifier: ^18.2.0
+        version: 18.2.0
+  packages/ui:
+    dependencies:
+      "@repo/shared":
+        specifier: workspace:*
+        version: link:../shared
+      react:
+        specifier: ^18.2.0
+        version: 18.2.0
+      tailwind-merge:
+        specifier: ^2.3.0
+        version: 2.3.0
+packages:
+  axios@1.7.0:
+    resolution:
+      integrity: sha512-axios
+      tarball: https://registry.npmjs.org/axios/-/axios-1.7.0.tgz
+    dependencies:
+      follow-redirects: 1.15.6
+  follow-redirects@1.15.6:
+    resolution:
+      integrity: sha512-follow
+  react@18.2.0:
+    resolution:
+      integrity: sha512-react
+  tailwind-merge@2.3.0:
+    resolution:
+      integrity: sha512-tailwind

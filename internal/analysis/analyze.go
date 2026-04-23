@@ -630,12 +630,20 @@ func quickCommands(target AnalysisTarget, changes []DependencyChange) []string {
 	if dir := target.Directory(); dir != "" {
 		prefix = "cd " + dir + " && "
 	}
-	commands := []string{prefix + "npm ls --all"}
+	listCommand := "npm ls --all"
+	packageCommand := "npm ls "
+	viewCommand := "npm view "
+	if target.PackageManager == "pnpm" {
+		listCommand = "pnpm list --depth Infinity"
+		packageCommand = "pnpm why "
+		viewCommand = "pnpm view "
+	}
+	commands := []string{prefix + listCommand}
 	if len(changes) > 0 {
 		top := changes[0]
-		commands = append(commands, prefix+"npm ls "+top.Name)
+		commands = append(commands, prefix+packageCommand+top.Name)
 		if top.ToVersion != "" {
-			commands = append(commands, prefix+"npm view "+top.Name+"@"+top.ToVersion+" time --json")
+			commands = append(commands, prefix+viewCommand+top.Name+"@"+top.ToVersion+" time --json")
 		}
 	}
 	return uniqueStrings(commands)

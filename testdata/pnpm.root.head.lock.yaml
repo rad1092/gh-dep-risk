@@ -1,0 +1,17 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      axios:
+        specifier: ^1.7.0
+        version: 1.7.0
+packages:
+  axios@1.7.0:
+    resolution:
+      integrity: sha512-axios
+      tarball: https://registry.npmjs.org/axios/-/axios-1.7.0.tgz
+    dependencies:
+      follow-redirects: 1.15.6
+  follow-redirects@1.15.6:
+    resolution:
+      integrity: sha512-follow

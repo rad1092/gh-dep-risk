@@ -1,0 +1,6 @@
+{
+  "name": "@repo/web",
+  "dependencies": {
+    "react": "^18.2.0"
+  }
+}

@@ -151,3 +151,53 @@ func TestCollectTargetPackagesForWorkspaceUsesSharedRootLockfile(t *testing.T) {
 		t.Fatalf("expected exact workspace attribution for shared root lockfile fixture")
 	}
 }
+
+func TestParsePNPMLockfileAndCollectWorkspacePackages(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pnpm.workspace.head.lock.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lockfile, err := ParseLockfile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lockfile.Manager != "pnpm" {
+		t.Fatalf("expected pnpm manager, got %q", lockfile.Manager)
+	}
+
+	view := lockfile.CollectTargetPackages("apps/web", []string{"axios", "react"})
+	if _, ok := view.Direct["axios"]; !ok {
+		t.Fatalf("expected axios to resolve as a direct pnpm workspace dependency")
+	}
+	if _, ok := view.Transitive["follow-redirects@1.15.6"]; !ok {
+		t.Fatalf("expected pnpm transitive dependency to be included")
+	}
+	if view.Approximate {
+		t.Fatalf("expected exact pnpm workspace attribution")
+	}
+}
+
+func TestParsePNPMLockfilePreservesWorkspaceLocalLinks(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pnpm.workspace.head.lock.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lockfile, err := ParseLockfile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	view := lockfile.CollectTargetPackages("packages/ui", []string{"@repo/shared", "tailwind-merge"})
+	shared, ok := view.Direct["@repo/shared"]
+	if !ok {
+		t.Fatalf("expected workspace-local direct dependency")
+	}
+	if !shared.WorkspaceLocal {
+		t.Fatalf("expected workspace-local dependency marker")
+	}
+	if shared.Path != "workspace:@repo/shared" {
+		t.Fatalf("unexpected workspace-local path %q", shared.Path)
+	}
+}

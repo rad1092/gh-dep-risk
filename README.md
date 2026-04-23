@@ -3,7 +3,8 @@
 [![test](https://github.com/rad1092/gh-dep-risk/actions/workflows/test.yml/badge.svg)](https://github.com/rad1092/gh-dep-risk/actions/workflows/test.yml)
 
 `gh-dep-risk` is a precompiled GitHub CLI extension that reviewers run on
-demand to summarize npm dependency risk in pull requests.
+demand to summarize JavaScript dependency risk in pull requests for npm and
+pnpm projects.
 
 It is an extension instead of a server so it can reuse `gh` authentication,
 stay on the reviewer's machine or in a one-off workflow run, and avoid any
@@ -11,12 +12,16 @@ webhook, queue, database, or dashboard infrastructure.
 
 ## Scope
 
-- npm-only scope
-- supported files: `package.json`, `package-lock.json`
+- npm and pnpm scope
+- supported files:
+  - npm: `package.json`, `package-lock.json`
+  - pnpm: `package.json`, `pnpm-lock.yaml`
+  - pnpm workspace discovery: `pnpm-workspace.yaml`
 - one Go binary
 - dependency review API first, lockfile-only fallback when dependency review
   is unavailable
-- no server, webhook receiver, GitHub App, DB, queue, dashboard, pnpm, or yarn
+- no server, webhook receiver, GitHub App, DB, queue, dashboard, yarn, bun,
+  or non-JS ecosystems
 
 ## Install
 
@@ -85,6 +90,7 @@ gh dep-risk pr --format json
 gh dep-risk pr 123 --list-targets
 gh dep-risk pr 123 --path apps/web
 gh dep-risk pr 123 --path package.json --comment
+gh dep-risk pr --comment=false
 gh dep-risk pr --bundle-dir ./dep-risk-bundle
 gh dep-risk pr --comment
 gh dep-risk pr --fail-level high
@@ -118,6 +124,42 @@ branch.
 
 - `--json`
 
+## Config File
+
+`gh dep-risk pr` also reads a repo-local config file named
+`.gh-dep-risk.yml` from the current working directory when it exists.
+
+Supported keys:
+
+- `lang: ko|en`
+- `fail_level: none|low|medium|high|critical`
+- `comment: true|false`
+- `path: apps/web` or `path: [apps/web, package.json]`
+- `no_registry: true|false`
+
+Example:
+
+```yaml
+lang: en
+fail_level: high
+comment: true
+path:
+  - apps/web
+  - package.json
+no_registry: false
+```
+
+Precedence rules:
+
+- CLI flags override config values
+- config values override built-in defaults
+- an explicit CLI `--path` replaces config `path`
+- explicit boolean CLI overrides such as `--comment=false` and
+  `--no-registry=false` override a config value of `true`
+
+Unknown config keys are rejected with a clear error that includes the config
+file path. A missing config file is ignored.
+
 ## What It Looks Like
 
 These examples are checked in under [docs/examples](docs/examples) and are
@@ -131,6 +173,7 @@ PR: #123 Update dependencies
 Score: 48 (high)
 Blast radius: medium
 Dependency review available: false
+Why risky: left-pad crosses a major version boundary and declares an install script.
 ```
 
 ### Markdown comment
@@ -141,6 +184,7 @@ Dependency review available: false
 - Repository: `owner/repo`
 - PR: [#123](https://github.com/owner/repo/pull/123) Update dependencies
 - Score: `48` (`high`)
+- Why risky: left-pad crosses a major version boundary and declares an install script.
 ```
 
 ### JSON output
@@ -173,7 +217,7 @@ English is the default language. Use `--lang ko` for Korean.
 - `dep-risk.md`
 - `metadata.json`
 
-When multiple npm targets are analyzed, the bundle also includes:
+When multiple JS targets are analyzed, the bundle also includes:
 
 - `targets/<safe-target-name>/dep-risk.json`
 - `targets/<safe-target-name>/dep-risk.md`
@@ -181,25 +225,27 @@ When multiple npm targets are analyzed, the bundle also includes:
 ## Behavior
 
 `gh dep-risk pr` resolves the repository from `GH_REPO` or the current git
-remote, fetches PR metadata, lists changed files, discovers supported npm
-targets from the base and head repository trees, and analyzes only the changed
-targets unless `--path` narrows the set explicitly.
+remote, fetches PR metadata, lists changed files, discovers supported npm and
+pnpm targets from the base and head repository trees, and analyzes only the
+changed targets unless `--path` narrows the set explicitly.
 
 Supported target shapes:
 
-- repo root projects with `package.json` and `package-lock.json`
+- npm root projects with `package.json` and `package-lock.json`
 - npm workspaces with a shared root `package-lock.json`
-- nested standalone subprojects with their own `package.json` and
-  `package-lock.json`
+- pnpm root projects with `package.json` and `pnpm-lock.yaml`
+- pnpm workspaces with `pnpm-workspace.yaml` and a shared root `pnpm-lock.yaml`
+- nested standalone subprojects with their own `package.json` and either
+  `package-lock.json` or `pnpm-lock.yaml`
 
-### npm monorepos and workspaces
+### JS monorepos and workspaces
 
 Default behavior:
 
-- if one supported npm target changed, `gh-dep-risk` analyzes that target
-- if multiple supported npm targets changed, `gh-dep-risk` analyzes all of them
-  and emits one aggregate result plus per-target detail
-- if no supported npm target changed, the command exits with code `2`
+- if one supported target changed, `gh-dep-risk` analyzes that target
+- if multiple supported targets changed, `gh-dep-risk` analyzes all of them and
+  emits one aggregate result plus per-target detail
+- if no supported target changed, the command exits with code `2`
 
 Useful examples:
 
@@ -214,21 +260,27 @@ Notes:
 
 - `--path` accepts either a directory or a `package.json` path and can be
   repeated
-- `--list-targets` prints detected targets, validates any `--path` filters, and
-  exits without running PR file analysis or dependency review
+- `--list-targets` prints a readable target list, validates any `--path`
+  filters, and exits without running PR file analysis or dependency review
 - npm workspaces reuse the shared root `package-lock.json`
+- pnpm workspaces reuse the shared root `pnpm-lock.yaml` and use
+  `pnpm-workspace.yaml` package globs for discovery
 - if a lockfile-only workspace change cannot be mapped exactly, the report calls
   out that attribution is approximate instead of failing
-- npm-only remains the current limit; pnpm and yarn are intentionally out of
-  scope
+- if both `package-lock.json` and `pnpm-lock.yaml` exist for the same target
+  directory, `gh-dep-risk` will only auto-pick one when exactly one lockfile is
+  clearly changed in the PR; otherwise it returns an ambiguity error and tells
+  you to narrow the target or remove the unused lockfile
+- out of scope for now: yarn, bun, `package.json5`, `package.yaml`, pnpm
+  catalogs, and pnpm branch lockfiles
 
 If dependency review returns `403` or `404`, `gh-dep-risk` falls back to
 lockfile-only analysis and explicitly reports
 `dependency_review_available=false`. Registry publish-age lookups are best
 effort and are skipped with `--no-registry`.
 
-If there is no meaningful npm manifest or lockfile dependency change, the
-command exits with code `2`.
+If there is no meaningful npm or pnpm manifest or lockfile dependency change,
+the command exits with code `2`.
 
 ### Comment upsert rules
 
@@ -273,7 +325,7 @@ only `dev`.
 
 - `0` success
 - `1` general error
-- `2` no supported npm dependency change found
+- `2` no supported npm or pnpm dependency change found
 - `3` final score meets or exceeds `--fail-level`
 - `4` authentication required or insufficient permissions
 

@@ -16,6 +16,9 @@ func renderMarkdown(report Report, lang string) string {
 	fmt.Fprintf(&b, "- %s: `%d` (`%s`)\n", tr("score"), report.Analysis.Score, report.Analysis.Level)
 	fmt.Fprintf(&b, "- %s: `%s`\n", tr("blast_radius"), report.Analysis.BlastRadius)
 	fmt.Fprintf(&b, "- %s: `%t`\n", tr("dependency_review"), report.Analysis.DependencyReviewAvailable)
+	if why := whyRiskyLine(report, lang); why != "" {
+		fmt.Fprintf(&b, "- %s: %s\n", tr("why_risky"), why)
+	}
 
 	b.WriteString("\n### ")
 	b.WriteString(tr("summary"))
@@ -61,21 +64,12 @@ func renderMarkdown(report Report, lang string) string {
 		}
 	}
 
-	if len(report.Analysis.RiskDrivers) > 0 {
-		b.WriteString("\n### ")
-		b.WriteString(tr("why_risky"))
-		b.WriteString("\n")
-		for _, driver := range localizeDrivers(report.Analysis.RiskDrivers, lang) {
-			fmt.Fprintf(&b, "- %s\n", driver)
-		}
-	}
-
 	if len(report.Analysis.RecommendedActions) > 0 {
 		b.WriteString("\n### ")
 		b.WriteString(tr("recommended_actions"))
 		b.WriteString("\n")
-		for _, action := range report.Analysis.RecommendedActions {
-			fmt.Fprintf(&b, "- %s\n", localizeAction(action, lang))
+		for _, action := range recommendedActionLines(report, lang) {
+			fmt.Fprintf(&b, "- %s\n", action)
 		}
 	}
 

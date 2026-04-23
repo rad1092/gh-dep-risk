@@ -1,0 +1,12 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+packages:
+  commander@12.1.0:
+    resolution:
+      integrity: sha512-commander
+      tarball: https://registry.npmjs.org/commander/-/commander-12.1.0.tgz

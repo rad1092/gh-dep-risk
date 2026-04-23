@@ -14,22 +14,30 @@ import (
 )
 
 type repoDataCache struct {
-	client    ghclient.Client
-	repo      ghclient.Repo
-	rawFiles  map[string][]byte
-	manifests map[string]*npm.PackageManifest
-	lockfiles map[string]*npm.Lockfile
-	trees     map[string][]string
+	client     ghclient.Client
+	repo       ghclient.Repo
+	rawFiles   map[string][]byte
+	manifests  map[string]*npm.PackageManifest
+	lockfiles  map[string]*npm.Lockfile
+	trees      map[string][]string
+	workspaces map[string][]string
+}
+
+type discoveredTarget struct {
+	ManifestPath string
+	DisplayName  string
+	Variants     []analysis.AnalysisTarget
 }
 
 func newRepoDataCache(client ghclient.Client, repo ghclient.Repo) *repoDataCache {
 	return &repoDataCache{
-		client:    client,
-		repo:      repo,
-		rawFiles:  map[string][]byte{},
-		manifests: map[string]*npm.PackageManifest{},
-		lockfiles: map[string]*npm.Lockfile{},
-		trees:     map[string][]string{},
+		client:     client,
+		repo:       repo,
+		rawFiles:   map[string][]byte{},
+		manifests:  map[string]*npm.PackageManifest{},
+		lockfiles:  map[string]*npm.Lockfile{},
+		trees:      map[string][]string{},
+		workspaces: map[string][]string{},
 	}
 }
 
@@ -81,6 +89,23 @@ func (c *repoDataCache) lockfile(ctx context.Context, ref, lockfilePath string) 
 	return lockfile, nil
 }
 
+func (c *repoDataCache) pnpmWorkspacePatterns(ctx context.Context, ref, workspacePath string) ([]string, error) {
+	key := cacheKey(ref, workspacePath)
+	if patterns, ok := c.workspaces[key]; ok {
+		return append([]string(nil), patterns...), nil
+	}
+	data, err := c.file(ctx, ref, workspacePath)
+	if err != nil {
+		return nil, err
+	}
+	patterns, err := npm.ParsePNPMWorkspacePatterns(data)
+	if err != nil {
+		return nil, err
+	}
+	c.workspaces[key] = append([]string(nil), patterns...)
+	return append([]string(nil), patterns...), nil
+}
+
 func (c *repoDataCache) file(ctx context.Context, ref, filePath string) ([]byte, error) {
 	key := cacheKey(ref, filePath)
 	if data, ok := c.rawFiles[key]; ok {
@@ -98,7 +123,7 @@ func (c *repoDataCache) file(ctx context.Context, ref, filePath string) ([]byte,
 	return append([]byte(nil), data...), nil
 }
 
-func discoverTargets(ctx context.Context, cache *repoDataCache, baseRef, headRef string) ([]analysis.AnalysisTarget, error) {
+func discoverTargets(ctx context.Context, cache *repoDataCache, baseRef, headRef string) ([]discoveredTarget, error) {
 	baseFiles, err := cache.listFiles(ctx, baseRef)
 	if err != nil {
 		return nil, err
@@ -109,7 +134,9 @@ func discoverTargets(ctx context.Context, cache *repoDataCache, baseRef, headRef
 	}
 
 	manifestPaths := unionPaths(filterPaths(baseFiles, "package.json"), filterPaths(headFiles, "package.json"))
-	lockfilePaths := pathSet(unionPaths(filterPaths(baseFiles, "package-lock.json"), filterPaths(headFiles, "package-lock.json")))
+	npmLockfilePaths := pathSet(unionPaths(filterPaths(baseFiles, "package-lock.json"), filterPaths(headFiles, "package-lock.json")))
+	pnpmLockfilePaths := pathSet(unionPaths(filterPaths(baseFiles, "pnpm-lock.yaml"), filterPaths(headFiles, "pnpm-lock.yaml")))
+	pnpmWorkspacePaths := unionPaths(filterPaths(baseFiles, "pnpm-workspace.yaml"), filterPaths(headFiles, "pnpm-workspace.yaml"))
 
 	manifestCache := map[string][2]*npm.PackageManifest{}
 	for _, manifestPath := range manifestPaths {
@@ -124,7 +151,7 @@ func discoverTargets(ctx context.Context, cache *repoDataCache, baseRef, headRef
 		manifestCache[manifestPath] = [2]*npm.PackageManifest{baseManifest, headManifest}
 	}
 
-	workspaceRoots := map[string]string{}
+	npmWorkspaceRoots := map[string]string{}
 	for _, manifestPath := range manifestPaths {
 		patterns := workspacePatterns(manifestCache[manifestPath][0], manifestCache[manifestPath][1])
 		if len(patterns) == 0 {
@@ -132,7 +159,7 @@ func discoverTargets(ctx context.Context, cache *repoDataCache, baseRef, headRef
 		}
 		rootDir := manifestDir(manifestPath)
 		lockfilePath := lockfilePathForDir(rootDir)
-		if _, ok := lockfilePaths[lockfilePath]; !ok {
+		if _, ok := npmLockfilePaths[lockfilePath]; !ok {
 			continue
 		}
 		for _, candidate := range manifestPaths {
@@ -142,43 +169,99 @@ func discoverTargets(ctx context.Context, cache *repoDataCache, baseRef, headRef
 			if !matchesWorkspaceTarget(rootDir, patterns, candidate) {
 				continue
 			}
-			workspaceRoots[candidate] = rootDir
+			npmWorkspaceRoots[candidate] = rootDir
 		}
 	}
 
-	targets := make([]analysis.AnalysisTarget, 0, len(manifestPaths))
+	pnpmWorkspaceRoots := map[string]string{}
+	for _, workspacePath := range pnpmWorkspacePaths {
+		rootDir := manifestDir(workspacePath)
+		lockfilePath := pnpmLockfilePathForDir(rootDir)
+		if _, ok := pnpmLockfilePaths[lockfilePath]; !ok {
+			continue
+		}
+		basePatterns, err := cache.pnpmWorkspacePatterns(ctx, baseRef, workspacePath)
+		if err != nil {
+			return nil, err
+		}
+		headPatterns, err := cache.pnpmWorkspacePatterns(ctx, headRef, workspacePath)
+		if err != nil {
+			return nil, err
+		}
+		patterns := unionStrings(basePatterns, headPatterns)
+		if len(patterns) == 0 {
+			continue
+		}
+		rootManifestPath := manifestPathForDir(rootDir)
+		for _, candidate := range manifestPaths {
+			if candidate == rootManifestPath {
+				continue
+			}
+			if !matchesWorkspaceTarget(rootDir, patterns, candidate) {
+				continue
+			}
+			pnpmWorkspaceRoots[candidate] = rootDir
+		}
+	}
+
+	grouped := map[string][]analysis.AnalysisTarget{}
 	for _, manifestPath := range manifestPaths {
 		dir := manifestDir(manifestPath)
-		lockfilePath := lockfilePathForDir(dir)
-		workspaceRoot, isWorkspace := workspaceRoots[manifestPath]
-		switch {
-		case manifestPath == "package.json":
-			if _, ok := lockfilePaths[lockfilePath]; ok {
-				targets = append(targets, analysis.AnalysisTarget{
-					DisplayName:  "root",
-					ManifestPath: manifestPath,
-					LockfilePath: lockfilePath,
-					Kind:         analysis.TargetKindRoot,
-				})
-			}
-		case isWorkspace:
-			targets = append(targets, analysis.AnalysisTarget{
-				DisplayName:       dir,
+		npmLockfilePath := lockfilePathForDir(dir)
+		pnpmLockfilePath := pnpmLockfilePathForDir(dir)
+
+		if workspaceRoot, ok := npmWorkspaceRoots[manifestPath]; ok {
+			grouped[manifestPath] = append(grouped[manifestPath], analysis.AnalysisTarget{
+				DisplayName:       displayNameForManifest(manifestPath),
 				ManifestPath:      manifestPath,
 				LockfilePath:      lockfilePathForDir(workspaceRoot),
 				Kind:              analysis.TargetKindWorkspace,
 				WorkspaceRootPath: workspaceRoot,
+				PackageManager:    "npm",
 			})
-		default:
-			if _, ok := lockfilePaths[lockfilePath]; ok {
-				targets = append(targets, analysis.AnalysisTarget{
-					DisplayName:  dir,
-					ManifestPath: manifestPath,
-					LockfilePath: lockfilePath,
-					Kind:         analysis.TargetKindStandalone,
-				})
-			}
+		} else if _, ok := npmLockfilePaths[npmLockfilePath]; ok {
+			grouped[manifestPath] = append(grouped[manifestPath], analysis.AnalysisTarget{
+				DisplayName:    displayNameForManifest(manifestPath),
+				ManifestPath:   manifestPath,
+				LockfilePath:   npmLockfilePath,
+				Kind:           kindForManifest(manifestPath),
+				PackageManager: "npm",
+			})
 		}
+
+		if workspaceRoot, ok := pnpmWorkspaceRoots[manifestPath]; ok {
+			grouped[manifestPath] = append(grouped[manifestPath], analysis.AnalysisTarget{
+				DisplayName:       displayNameForManifest(manifestPath),
+				ManifestPath:      manifestPath,
+				LockfilePath:      pnpmLockfilePathForDir(workspaceRoot),
+				Kind:              analysis.TargetKindWorkspace,
+				WorkspaceRootPath: workspaceRoot,
+				PackageManager:    "pnpm",
+			})
+		} else if _, ok := pnpmLockfilePaths[pnpmLockfilePath]; ok {
+			grouped[manifestPath] = append(grouped[manifestPath], analysis.AnalysisTarget{
+				DisplayName:    displayNameForManifest(manifestPath),
+				ManifestPath:   manifestPath,
+				LockfilePath:   pnpmLockfilePath,
+				Kind:           kindForManifest(manifestPath),
+				PackageManager: "pnpm",
+			})
+		}
+	}
+
+	targets := make([]discoveredTarget, 0, len(grouped))
+	for manifestPath, variants := range grouped {
+		sort.Slice(variants, func(i, j int) bool {
+			if variants[i].PackageManager == variants[j].PackageManager {
+				return variants[i].LockfilePath < variants[j].LockfilePath
+			}
+			return variants[i].PackageManager < variants[j].PackageManager
+		})
+		targets = append(targets, discoveredTarget{
+			ManifestPath: manifestPath,
+			DisplayName:  displayNameForManifest(manifestPath),
+			Variants:     variants,
+		})
 	}
 
 	sort.Slice(targets, func(i, j int) bool {
@@ -187,22 +270,22 @@ func discoverTargets(ctx context.Context, cache *repoDataCache, baseRef, headRef
 	return targets, nil
 }
 
-func filterTargetsByRequestedPaths(targets []analysis.AnalysisTarget, requested []string) ([]analysis.AnalysisTarget, error) {
+func filterTargetsByRequestedPaths(targets []discoveredTarget, requested []string) ([]discoveredTarget, error) {
 	if len(requested) == 0 {
-		return append([]analysis.AnalysisTarget(nil), targets...), nil
+		return append([]discoveredTarget(nil), targets...), nil
 	}
 
-	index := map[string]analysis.AnalysisTarget{}
+	index := map[string]discoveredTarget{}
 	for _, target := range targets {
 		index[target.ManifestPath] = target
 	}
-	selected := make([]analysis.AnalysisTarget, 0, len(requested))
+	selected := make([]discoveredTarget, 0, len(requested))
 	seen := map[string]struct{}{}
 	for _, raw := range requested {
 		manifestPath := normalizeRequestedManifestPath(raw)
 		target, ok := index[manifestPath]
 		if !ok {
-			return nil, fmt.Errorf("unknown npm target path %q", raw)
+			return nil, fmt.Errorf("unknown dependency target path %q. Run --list-targets to inspect detected targets, or try one of: %s", raw, targetPathExamples(targets))
 		}
 		if _, ok := seen[target.ManifestPath]; ok {
 			continue
@@ -216,37 +299,69 @@ func filterTargetsByRequestedPaths(targets []analysis.AnalysisTarget, requested 
 	return selected, nil
 }
 
-func selectChangedTargets(targets []analysis.AnalysisTarget, files []ghclient.PullRequestFile) []analysis.AnalysisTarget {
+func selectChangedTargets(targets []discoveredTarget, files []ghclient.PullRequestFile) ([]analysis.AnalysisTarget, error) {
 	changed := map[string]struct{}{}
 	for _, file := range files {
 		changed[normalizeRepoPath(file.Filename)] = struct{}{}
 	}
 	selected := make([]analysis.AnalysisTarget, 0, len(targets))
 	for _, target := range targets {
-		if _, ok := changed[target.ManifestPath]; ok {
-			selected = append(selected, target)
+		if !targetIsChanged(target, changed) {
 			continue
 		}
-		if _, ok := changed[target.LockfilePath]; ok {
-			selected = append(selected, target)
+		resolved, err := resolveTargetVariant(target, changed)
+		if err != nil {
+			return nil, err
 		}
+		selected = append(selected, resolved)
 	}
-	return selected
+	return selected, nil
 }
 
-func formatTargets(targets []analysis.AnalysisTarget) string {
+func formatTargets(targets []discoveredTarget) string {
 	if len(targets) == 0 {
-		return "no supported npm targets detected\n"
+		return "Detected JS package targets:\n- none\n"
 	}
-	lines := make([]string, 0, len(targets))
+	lines := make([]string, 0, len(targets)+1)
+	lines = append(lines, "Detected JS package targets:")
 	for _, target := range targets {
-		line := fmt.Sprintf("%s\t%s\t%s\t%s", target.Kind, target.DisplayName, target.ManifestPath, target.LockfilePath)
-		if target.WorkspaceRootPath != "" {
-			line += "\t" + target.WorkspaceRootPath
+		if target.ambiguous() {
+			lines = append(lines, fmt.Sprintf("- %s [ambiguous]\n  manifest: %s\n  lockfiles: %s\n  package managers: %s\n  note: analysis will use the single changed lockfile if the PR makes this target unambiguous", displayTargetName(target), target.ManifestPath, strings.Join(target.lockfiles(), ", "), strings.Join(target.packageManagers(), ", ")))
+			continue
+		}
+		variant := target.Variants[0]
+		line := fmt.Sprintf("- %s [%s, %s]\n  manifest: %s\n  lockfile: %s", displayTargetName(target), variant.Kind, variant.PackageManager, target.ManifestPath, variant.LockfilePath)
+		if variant.WorkspaceRootPath != "" {
+			line += fmt.Sprintf("\n  workspace root: %s", variant.WorkspaceRootPath)
 		}
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func targetPathExamples(targets []discoveredTarget) string {
+	paths := make([]string, 0, len(targets))
+	for _, target := range targets {
+		paths = append(paths, target.ManifestPath)
+	}
+	sort.Strings(paths)
+	if len(paths) == 0 {
+		return "package.json"
+	}
+	if len(paths) > 4 {
+		paths = paths[:4]
+	}
+	return strings.Join(paths, ", ")
+}
+
+func displayTargetName(target discoveredTarget) string {
+	if target.DisplayName != "" {
+		return target.DisplayName
+	}
+	if dir := manifestDir(target.ManifestPath); dir != "" {
+		return dir
+	}
+	return "root"
 }
 
 func cacheKey(ref, filePath string) string {
@@ -277,6 +392,22 @@ func unionPaths(left, right []string) []string {
 	return paths
 }
 
+func unionStrings(left, right []string) []string {
+	set := map[string]struct{}{}
+	for _, value := range append(append([]string(nil), left...), right...) {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		set[value] = struct{}{}
+	}
+	values := make([]string, 0, len(set))
+	for value := range set {
+		values = append(values, value)
+	}
+	sort.Strings(values)
+	return values
+}
+
 func pathSet(paths []string) map[string]struct{} {
 	set := make(map[string]struct{}, len(paths))
 	for _, filePath := range paths {
@@ -287,7 +418,7 @@ func pathSet(paths []string) map[string]struct{} {
 
 func manifestDir(manifestPath string) string {
 	cleaned := normalizeRepoPath(manifestPath)
-	if cleaned == "package.json" {
+	if cleaned == "package.json" || cleaned == "pnpm-workspace.yaml" {
 		return ""
 	}
 	dir := path.Dir(cleaned)
@@ -311,6 +442,14 @@ func lockfilePathForDir(dir string) string {
 		return "package-lock.json"
 	}
 	return cleaned + "/package-lock.json"
+}
+
+func pnpmLockfilePathForDir(dir string) string {
+	cleaned := normalizeRepoPath(dir)
+	if cleaned == "" {
+		return "pnpm-lock.yaml"
+	}
+	return cleaned + "/pnpm-lock.yaml"
 }
 
 func normalizeRepoPath(value string) string {
@@ -361,13 +500,7 @@ func matchesWorkspaceTarget(rootDir string, patterns []string, manifestPath stri
 	if !ok || relative == "" {
 		return false
 	}
-	for _, pattern := range patterns {
-		matched, err := path.Match(pattern, relative)
-		if err == nil && matched {
-			return true
-		}
-	}
-	return false
+	return npm.MatchWorkspacePatternSet(patterns, relative)
 }
 
 func relativeToRoot(rootDir, targetDir string) (string, bool) {
@@ -384,4 +517,78 @@ func relativeToRoot(rootDir, targetDir string) (string, bool) {
 		return "", false
 	}
 	return strings.TrimPrefix(target, prefix), true
+}
+
+func displayNameForManifest(manifestPath string) string {
+	if dir := manifestDir(manifestPath); dir != "" {
+		return dir
+	}
+	return "root"
+}
+
+func kindForManifest(manifestPath string) analysis.TargetKind {
+	if manifestPath == "package.json" {
+		return analysis.TargetKindRoot
+	}
+	return analysis.TargetKindStandalone
+}
+
+func (t discoveredTarget) ambiguous() bool {
+	return len(t.Variants) > 1
+}
+
+func (t discoveredTarget) lockfiles() []string {
+	lockfiles := make([]string, 0, len(t.Variants))
+	for _, variant := range t.Variants {
+		lockfiles = append(lockfiles, variant.LockfilePath)
+	}
+	sort.Strings(lockfiles)
+	return lockfiles
+}
+
+func (t discoveredTarget) packageManagers() []string {
+	seen := map[string]struct{}{}
+	managers := make([]string, 0, len(t.Variants))
+	for _, variant := range t.Variants {
+		if _, ok := seen[variant.PackageManager]; ok {
+			continue
+		}
+		seen[variant.PackageManager] = struct{}{}
+		managers = append(managers, variant.PackageManager)
+	}
+	sort.Strings(managers)
+	return managers
+}
+
+func targetIsChanged(target discoveredTarget, changed map[string]struct{}) bool {
+	if _, ok := changed[target.ManifestPath]; ok {
+		return true
+	}
+	for _, variant := range target.Variants {
+		if _, ok := changed[variant.LockfilePath]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveTargetVariant(target discoveredTarget, changed map[string]struct{}) (analysis.AnalysisTarget, error) {
+	if len(target.Variants) == 1 {
+		return target.Variants[0], nil
+	}
+
+	changedVariants := make([]analysis.AnalysisTarget, 0, len(target.Variants))
+	for _, variant := range target.Variants {
+		if _, ok := changed[variant.LockfilePath]; ok {
+			changedVariants = append(changedVariants, variant)
+		}
+	}
+	switch len(changedVariants) {
+	case 1:
+		return changedVariants[0], nil
+	case 0:
+		return analysis.AnalysisTarget{}, fmt.Errorf("target %q is ambiguous because both %s are present. Change exactly one lockfile in the PR or remove the unused lockfile, then rerun with --path %s", target.ManifestPath, strings.Join(target.lockfiles(), " and "), target.ManifestPath)
+	default:
+		return analysis.AnalysisTarget{}, fmt.Errorf("target %q is ambiguous because multiple supported lockfiles changed in the same directory (%s). Keep only one package manager lockfile per target or narrow the PR before rerunning", target.ManifestPath, strings.Join(target.lockfiles(), ", "))
+	}
 }

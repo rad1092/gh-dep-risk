@@ -1,0 +1,6 @@
+{
+  "name": "@repo/ui",
+  "dependencies": {
+    "react": "^18.2.0"
+  }
+}

@@ -6,10 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"gh-dep-risk/internal/analysis"
 	"gh-dep-risk/internal/app"
+	"gh-dep-risk/internal/config"
 	ghclient "gh-dep-risk/internal/github"
 	"gh-dep-risk/internal/npm"
 )
@@ -33,15 +35,17 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 	var failLevel string
 	var paths multiStringFlag
 
-	fs.StringVar(&opts.Repo, "repo", "", "repository in OWNER/REPO form")
-	fs.StringVar(&opts.Format, "format", "human", "output format: human|json|markdown")
-	fs.StringVar(&opts.Lang, "lang", "en", "output language: ko|en")
+	defaults := defaultPROptions()
+
+	fs.StringVar(&opts.Repo, "repo", defaults.Repo, "repository in OWNER/REPO form")
+	fs.StringVar(&opts.Format, "format", defaults.Format, "output format: human|json|markdown")
+	fs.StringVar(&opts.Lang, "lang", defaults.Lang, "output language: ko|en")
 	fs.BoolVar(&opts.Comment, "comment", false, "upsert a PR timeline comment")
-	fs.StringVar(&failLevel, "fail-level", string(analysis.RiskLevelNone), "fail threshold: low|medium|high|critical|none")
+	fs.StringVar(&failLevel, "fail-level", string(defaults.FailLevel), "fail threshold: low|medium|high|critical|none")
 	fs.BoolVar(&opts.NoRegistry, "no-registry", false, "skip npm registry lookups")
-	fs.StringVar(&opts.BundleDir, "bundle-dir", "", "write human/json/markdown bundle files to a directory")
+	fs.StringVar(&opts.BundleDir, "bundle-dir", defaults.BundleDir, "write human/json/markdown bundle files to a directory")
 	fs.Var(&paths, "path", "restrict analysis to a repo-relative directory or package.json path (repeatable)")
-	fs.BoolVar(&opts.ListTargets, "list-targets", false, "print detected npm analysis targets and exit")
+	fs.BoolVar(&opts.ListTargets, "list-targets", defaults.ListTargets, "print detected npm/pnpm analysis targets and exit")
 	fs.Usage = func() { printPRUsage(stderr) }
 
 	parseArgs := normalizePRArgs(args)
@@ -59,7 +63,12 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 	if fs.NArg() == 1 {
 		opts.PRArg = fs.Arg(0)
 	}
-	opts.Paths = append([]string(nil), paths...)
+
+	visited := visitedFlags(fs)
+	if mergeErr := applyPRConfig(&opts, &failLevel, &paths, visited, defaults); mergeErr != nil {
+		fmt.Fprintln(stderr, mergeErr)
+		return 1
+	}
 
 	level, err := analysis.ParseRiskLevel(failLevel)
 	if err != nil {
@@ -156,6 +165,8 @@ func printPRUsage(w io.Writer) {
 	fmt.Fprintln(w, "  gh dep-risk pr --format json")
 	fmt.Fprintln(w, "  gh dep-risk pr 123 --list-targets")
 	fmt.Fprintln(w, "  gh dep-risk pr 123 --path apps/web")
+	fmt.Fprintln(w, "  gh dep-risk pr --comment=false")
+	fmt.Fprintln(w, "  gh dep-risk pr --no-registry=false")
 	fmt.Fprintln(w, "  gh dep-risk pr --bundle-dir ./dep-risk-bundle")
 	fmt.Fprintln(w, "  gh dep-risk pr --comment")
 	fmt.Fprintln(w, "  gh dep-risk pr --fail-level high")
@@ -178,5 +189,54 @@ func printPRUsage(w io.Writer) {
 	fmt.Fprintln(w, "  -path value")
 	fmt.Fprintln(w, "    \trestrict analysis to a repo-relative directory or package.json path (repeatable)")
 	fmt.Fprintln(w, "  -list-targets")
-	fmt.Fprintln(w, "    \tprint detected npm analysis targets and exit")
+	fmt.Fprintln(w, "    \tprint detected npm/pnpm analysis targets and exit")
+	fmt.Fprintf(w, "\nConfig:\n  Reads %s from the current working directory when present. CLI flags override config values.\n", config.PRConfigFileName)
+}
+
+func defaultPROptions() app.RunPROptions {
+	return app.RunPROptions{
+		Format:    "human",
+		Lang:      "en",
+		FailLevel: analysis.RiskLevelNone,
+	}
+}
+
+func visitedFlags(fs *flag.FlagSet) map[string]struct{} {
+	visited := map[string]struct{}{}
+	fs.Visit(func(f *flag.Flag) {
+		visited[f.Name] = struct{}{}
+	})
+	return visited
+}
+
+func applyPRConfig(opts *app.RunPROptions, failLevel *string, paths *multiStringFlag, visited map[string]struct{}, defaults app.RunPROptions) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	cfg, _, err := config.LoadPRConfig(cwd)
+	if err != nil {
+		return err
+	}
+
+	if _, ok := visited["lang"]; !ok && cfg.Lang != nil {
+		opts.Lang = *cfg.Lang
+	}
+	if _, ok := visited["comment"]; !ok && cfg.Comment != nil {
+		opts.Comment = *cfg.Comment
+	}
+	if _, ok := visited["fail-level"]; !ok && cfg.FailLevel != nil {
+		*failLevel = *cfg.FailLevel
+	}
+	if _, ok := visited["no-registry"]; !ok && cfg.NoRegistry != nil {
+		opts.NoRegistry = *cfg.NoRegistry
+	}
+	if _, ok := visited["path"]; ok {
+		opts.Paths = append([]string(nil), (*paths)...)
+	} else if cfg.Paths.Set {
+		opts.Paths = append([]string(nil), cfg.Paths.Values...)
+	} else {
+		opts.Paths = append([]string(nil), defaults.Paths...)
+	}
+	return nil
 }

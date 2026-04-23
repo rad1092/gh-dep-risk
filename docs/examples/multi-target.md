@@ -5,6 +5,7 @@
 - Score: `52` (`high`)
 - Blast radius: `medium`
 - Dependency review available: `true`
+- Why risky: apps/web / axios adds a new direct runtime dependency.
 
 ### Summary
 - 2 npm dependency changes were detected.
@@ -19,11 +20,8 @@
   - `tailwind-merge -> 2.3.0` (added/runtime, score `22`)
     - A new direct runtime dependency was added.
 
-### Why risky
-- A new direct runtime dependency was added.
-
 ### Recommended actions
-- Run targeted tests and smoke checks for affected paths.
+- Run targeted smoke checks for apps/web and packages/ui and the code paths that import the changed packages.
 
 ### Quick commands
 - `cd apps/web && npm ls --all`

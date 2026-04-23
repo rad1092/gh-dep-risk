@@ -127,21 +127,7 @@ func parseWorkspaces(data json.RawMessage) ([]string, error) {
 }
 
 func cleanWorkspacePatterns(patterns []string) []string {
-	seen := map[string]struct{}{}
-	result := make([]string, 0, len(patterns))
-	for _, pattern := range patterns {
-		cleaned := cleanWorkspacePattern(pattern)
-		if cleaned == "" {
-			continue
-		}
-		if _, ok := seen[cleaned]; ok {
-			continue
-		}
-		seen[cleaned] = struct{}{}
-		result = append(result, cleaned)
-	}
-	sort.Strings(result)
-	return result
+	return uniqueWorkspacePatterns(patterns)
 }
 
 func cleanWorkspacePattern(pattern string) string {

@@ -79,6 +79,20 @@ func TestResolveTargetUsesCurrentBranchPRWhenArgMissing(t *testing.T) {
 	}
 }
 
+func TestResolveTargetCurrentBranchFailureIsActionable(t *testing.T) {
+	client := newFakeGitHubClient()
+	client.repo = testRepo()
+	client.resolveCurrentPRErr = errors.New("no pull requests found for branch")
+
+	_, _, err := resolveTarget(context.Background(), client, RunPROptions{})
+	if err == nil {
+		t.Fatalf("expected current-branch resolution error")
+	}
+	if !strings.Contains(err.Error(), "Pass a PR number, a full PR URL, or --repo OWNER/REPO explicitly") {
+		t.Fatalf("expected actionable guidance, got %v", err)
+	}
+}
+
 func TestRunPRExitCodeNoSupportedChange(t *testing.T) {
 	client := newConfiguredFakeGitHubClient(t)
 	client.files = []ghclient.PullRequestFile{{Filename: "README.md", Status: "modified"}}
@@ -248,10 +262,13 @@ func TestRunPRListTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		"root\troot\tpackage.json\tpackage-lock.json",
-		"workspace\tapps/web\tapps/web/package.json\tpackage-lock.json",
-		"workspace\tpackages/ui\tpackages/ui/package.json\tpackage-lock.json",
-		"standalone\tservices/api\tservices/api/package.json\tservices/api/package-lock.json",
+		"Detected JS package targets:",
+		"- root [root, npm]",
+		"manifest: package.json",
+		"- apps/web [workspace, npm]",
+		"manifest: apps/web/package.json",
+		"lockfile: package-lock.json",
+		"- services/api [standalone, npm]",
 	} {
 		if !strings.Contains(stdout, expected) {
 			t.Fatalf("expected target listing to contain %q, got %q", expected, stdout)
@@ -280,7 +297,7 @@ func TestRunPRListTargetsSkipsAnalysisAndCommentPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "workspace\tapps/web\tapps/web/package.json\tpackage-lock.json") {
+	if !strings.Contains(stdout.String(), "- apps/web [workspace, npm]") {
 		t.Fatalf("expected filtered target output, got %q", stdout.String())
 	}
 	if client.listPullRequestCalls != 0 {
@@ -342,8 +359,144 @@ func TestRunPRPathFilteringRejectsUnknownTarget(t *testing.T) {
 
 	_, _, err := runPRWithClient(t, client, RunPROptions{Paths: []string{"apps/unknown"}})
 	assertExitCode(t, err, 1)
-	if !strings.Contains(err.Error(), "unknown npm target path") {
-		t.Fatalf("expected clear unknown target error, got %v", err)
+	for _, expected := range []string{
+		"unknown dependency target path",
+		"Run --list-targets",
+		"apps/web/package.json",
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("expected helpful unknown target error containing %q, got %v", expected, err)
+		}
+	}
+}
+
+func TestRunPRListTargetsForPNPMIncludesManagerDistinction(t *testing.T) {
+	client := newPNPMWorkspaceFakeGitHubClient(t)
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{ListTargets: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"Detected JS package targets:",
+		"- root [root, pnpm]",
+		"- apps/web [workspace, pnpm]",
+		"- packages/ui [workspace, pnpm]",
+		"- tools/cli [standalone, pnpm]",
+		"lockfile: pnpm-lock.yaml",
+	} {
+		if !strings.Contains(stdout, expected) {
+			t.Fatalf("expected pnpm target listing to contain %q, got %q", expected, stdout)
+		}
+	}
+}
+
+func TestRunPRPathFilteringForPNPM(t *testing.T) {
+	client := newPNPMWorkspaceFakeGitHubClient(t)
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "apps/web/package.json", Status: "modified"},
+		{Filename: "pnpm-lock.yaml", Status: "modified"},
+	}
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{
+		Format: "json",
+		Paths:  []string{"apps/web"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload render.JSONReport
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Targets) != 1 || payload.Targets[0].Target.DisplayName != "apps/web" {
+		t.Fatalf("expected only pnpm apps/web target, got %#v", payload.Targets)
+	}
+	if !containsString(payload.QuickCommands, "cd apps/web && pnpm list --depth Infinity") {
+		t.Fatalf("expected pnpm quick command, got %#v", payload.QuickCommands)
+	}
+}
+
+func TestRunPRPNPMDependencyReviewFallback(t *testing.T) {
+	client := newPNPMWorkspaceFakeGitHubClient(t)
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "apps/web/package.json", Status: "modified"},
+		{Filename: "pnpm-lock.yaml", Status: "modified"},
+	}
+	client.compareManifestErr["apps/web/package.json"] = &api.HTTPError{StatusCode: 404, Message: "dependency review disabled"}
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{Format: "json", Paths: []string{"apps/web"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`"dependency_review_available": false`,
+		`"quick_commands": [`,
+		`"cd apps/web \u0026\u0026 pnpm why axios"`,
+	} {
+		if !strings.Contains(stdout, expected) {
+			t.Fatalf("expected pnpm fallback output to contain %q, got %q", expected, stdout)
+		}
+	}
+}
+
+func TestRunPRSupportsMixedNPMPNPMTargets(t *testing.T) {
+	client := newMixedManagerFakeGitHubClient(t)
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{Format: "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload render.JSONReport
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Targets) != 2 {
+		t.Fatalf("expected mixed npm + pnpm targets, got %#v", payload.Targets)
+	}
+	if !containsString(payload.QuickCommands, "npm ls --all") || !containsString(payload.QuickCommands, "cd tools/cli && pnpm list --depth Infinity") {
+		t.Fatalf("expected mixed-manager quick commands, got %#v", payload.QuickCommands)
+	}
+}
+
+func TestRunPRAmbiguousDualLockfileRequiresSingleChangedLockfile(t *testing.T) {
+	client := newAmbiguousDualLockfileFakeGitHubClient(t)
+	client.files = []ghclient.PullRequestFile{{Filename: "package.json", Status: "modified"}}
+
+	_, _, err := runPRWithClient(t, client, RunPROptions{})
+	assertExitCode(t, err, 1)
+	if !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("expected ambiguous dual-lockfile error, got %v", err)
+	}
+}
+
+func TestRunPRAmbiguousDualLockfilePrefersSingleChangedManager(t *testing.T) {
+	client := newAmbiguousDualLockfileFakeGitHubClient(t)
+	client.files = []ghclient.PullRequestFile{{Filename: "package.json", Status: "modified"}, {Filename: "pnpm-lock.yaml", Status: "modified"}}
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{Format: "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout, `"pnpm why axios"`) {
+		t.Fatalf("expected pnpm manager to be selected, got %q", stdout)
+	}
+}
+
+func TestRunPRCommentAuthErrorIncludesCommentModeGuidance(t *testing.T) {
+	client := newConfiguredFakeGitHubClient(t)
+	client.viewerLoginErr = ghclient.AuthError{Op: "viewer"}
+
+	_, _, err := runPRWithClient(t, client, RunPROptions{Comment: true})
+	assertExitCode(t, err, 4)
+	for _, expected := range []string{
+		"comment mode requires permission",
+		"cross-repo workflow comment limits",
+		"owner/repo",
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("expected comment auth guidance containing %q, got %v", expected, err)
+		}
 	}
 }
 
@@ -630,6 +783,135 @@ func newSharedTransitiveWorkspaceFakeGitHubClient(t *testing.T) *fakeGitHubClien
 	return client
 }
 
+func newPNPMWorkspaceFakeGitHubClient(t *testing.T) *fakeGitHubClient {
+	t.Helper()
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "Update pnpm workspace dependencies",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "apps/web/package.json", Status: "modified"},
+		{Filename: "packages/ui/package.json", Status: "modified"},
+		{Filename: "pnpm-lock.yaml", Status: "modified"},
+	}
+	client.repositoryFilesByRef["base-sha"] = []string{
+		"package.json",
+		"pnpm-workspace.yaml",
+		"pnpm-lock.yaml",
+		"apps/web/package.json",
+		"packages/ui/package.json",
+		"tools/cli/package.json",
+		"tools/cli/pnpm-lock.yaml",
+	}
+	client.repositoryFilesByRef["head-sha"] = append([]string(nil), client.repositoryFilesByRef["base-sha"]...)
+	client.filesByKey[fileKey("package.json", "base-sha")] = readFixture(t, "pnpm.workspace.root.package.json")
+	client.filesByKey[fileKey("package.json", "head-sha")] = readFixture(t, "pnpm.workspace.root.package.json")
+	client.filesByKey[fileKey("pnpm-workspace.yaml", "base-sha")] = readFixture(t, "pnpm-workspace.yaml")
+	client.filesByKey[fileKey("pnpm-workspace.yaml", "head-sha")] = readFixture(t, "pnpm-workspace.yaml")
+	client.filesByKey[fileKey("pnpm-lock.yaml", "base-sha")] = readFixture(t, "pnpm.workspace.base.lock.yaml")
+	client.filesByKey[fileKey("pnpm-lock.yaml", "head-sha")] = readFixture(t, "pnpm.workspace.head.lock.yaml")
+	client.filesByKey[fileKey("apps/web/package.json", "base-sha")] = readFixture(t, "pnpm.workspace.apps-web.base.package.json")
+	client.filesByKey[fileKey("apps/web/package.json", "head-sha")] = readFixture(t, "pnpm.workspace.apps-web.head.package.json")
+	client.filesByKey[fileKey("packages/ui/package.json", "base-sha")] = readFixture(t, "pnpm.workspace.packages-ui.base.package.json")
+	client.filesByKey[fileKey("packages/ui/package.json", "head-sha")] = readFixture(t, "pnpm.workspace.packages-ui.head.package.json")
+	client.filesByKey[fileKey("tools/cli/package.json", "base-sha")] = readFixture(t, "pnpm.standalone.base.package.json")
+	client.filesByKey[fileKey("tools/cli/package.json", "head-sha")] = readFixture(t, "pnpm.standalone.head.package.json")
+	client.filesByKey[fileKey("tools/cli/pnpm-lock.yaml", "base-sha")] = readFixture(t, "pnpm.standalone.base.lock.yaml")
+	client.filesByKey[fileKey("tools/cli/pnpm-lock.yaml", "head-sha")] = readFixture(t, "pnpm.standalone.head.lock.yaml")
+	client.compareChangesByManifest["apps/web/package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "axios", Manifest: "apps/web/package.json", Ecosystem: "pnpm", ChangeType: "added", Version: "1.7.0"},
+	}
+	client.compareChangesByManifest["packages/ui/package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "tailwind-merge", Manifest: "packages/ui/package.json", Ecosystem: "pnpm", ChangeType: "added", Version: "2.3.0"},
+	}
+	client.compareChangesByManifest["tools/cli/package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "commander", Manifest: "tools/cli/package.json", Ecosystem: "pnpm", ChangeType: "added", Version: "12.1.0"},
+	}
+	return client
+}
+
+func newMixedManagerFakeGitHubClient(t *testing.T) *fakeGitHubClient {
+	t.Helper()
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "Update mixed package managers",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "package.json", Status: "modified"},
+		{Filename: "package-lock.json", Status: "modified"},
+		{Filename: "tools/cli/package.json", Status: "modified"},
+		{Filename: "tools/cli/pnpm-lock.yaml", Status: "modified"},
+	}
+	client.repositoryFilesByRef["base-sha"] = []string{
+		"package.json",
+		"package-lock.json",
+		"tools/cli/package.json",
+		"tools/cli/pnpm-lock.yaml",
+	}
+	client.repositoryFilesByRef["head-sha"] = append([]string(nil), client.repositoryFilesByRef["base-sha"]...)
+	client.filesByKey[fileKey("package.json", "base-sha")] = readFixture(t, "base.package.json")
+	client.filesByKey[fileKey("package.json", "head-sha")] = readFixture(t, "head.package.json")
+	client.filesByKey[fileKey("package-lock.json", "base-sha")] = readFixture(t, "base.package-lock.json")
+	client.filesByKey[fileKey("package-lock.json", "head-sha")] = readFixture(t, "head.package-lock.json")
+	client.filesByKey[fileKey("tools/cli/package.json", "base-sha")] = readFixture(t, "pnpm.standalone.base.package.json")
+	client.filesByKey[fileKey("tools/cli/package.json", "head-sha")] = readFixture(t, "pnpm.standalone.head.package.json")
+	client.filesByKey[fileKey("tools/cli/pnpm-lock.yaml", "base-sha")] = readFixture(t, "pnpm.standalone.base.lock.yaml")
+	client.filesByKey[fileKey("tools/cli/pnpm-lock.yaml", "head-sha")] = readFixture(t, "pnpm.standalone.head.lock.yaml")
+	client.compareChangesByManifest["package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "left-pad", Manifest: "package.json", Ecosystem: "npm", ChangeType: "removed", Version: "1.0.0"},
+		{Name: "left-pad", Manifest: "package.json", Ecosystem: "npm", ChangeType: "added", Version: "2.0.0"},
+	}
+	client.compareChangesByManifest["tools/cli/package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "commander", Manifest: "tools/cli/package.json", Ecosystem: "pnpm", ChangeType: "added", Version: "12.1.0"},
+	}
+	return client
+}
+
+func newAmbiguousDualLockfileFakeGitHubClient(t *testing.T) *fakeGitHubClient {
+	t.Helper()
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "Ambiguous root lockfiles",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "package.json", Status: "modified"},
+	}
+	client.repositoryFilesByRef["base-sha"] = []string{
+		"package.json",
+		"package-lock.json",
+		"pnpm-lock.yaml",
+	}
+	client.repositoryFilesByRef["head-sha"] = append([]string(nil), client.repositoryFilesByRef["base-sha"]...)
+	client.filesByKey[fileKey("package.json", "base-sha")] = readFixture(t, "pnpm.root.package.json")
+	client.filesByKey[fileKey("package.json", "head-sha")] = readFixture(t, "pnpm.root.package.json")
+	client.filesByKey[fileKey("package-lock.json", "base-sha")] = readFixture(t, "base.package-lock.json")
+	client.filesByKey[fileKey("package-lock.json", "head-sha")] = readFixture(t, "head.package-lock.json")
+	client.filesByKey[fileKey("pnpm-lock.yaml", "base-sha")] = readFixture(t, "pnpm.root.base.lock.yaml")
+	client.filesByKey[fileKey("pnpm-lock.yaml", "head-sha")] = readFixture(t, "pnpm.root.head.lock.yaml")
+	client.compareChangesByManifest["package.json"] = []ghclient.DependencyReviewChange{
+		{Name: "axios", Manifest: "package.json", Ecosystem: "pnpm", ChangeType: "added", Version: "1.7.0"},
+	}
+	return client
+}
+
 func (f *fakeGitHubClient) ResolveRepo(_ context.Context, override string) (ghclient.Repo, error) {
 	if f.resolveRepoErr != nil {
 		return ghclient.Repo{}, f.resolveRepoErr
@@ -776,6 +1058,15 @@ func readFixture(t *testing.T, name string) []byte {
 
 func fileKey(path, ref string) string {
 	return path + "@" + ref
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }
 
 type fakeRegistryClient struct {

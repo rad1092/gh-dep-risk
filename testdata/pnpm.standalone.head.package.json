@@ -1,0 +1,6 @@
+{
+  "name": "@repo/cli",
+  "dependencies": {
+    "commander": "^12.1.0"
+  }
+}

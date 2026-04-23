@@ -5,6 +5,7 @@
 - Score: `48` (`high`)
 - Blast radius: `medium`
 - Dependency review available: `false`
+- Why risky: left-pad crosses a major version boundary and declares an install script.
 
 ### Summary
 - 1 npm dependency changes were detected.
@@ -21,13 +22,9 @@
     - The package declares an install script.
   - Dependency review API was unavailable, so lockfile-only fallback analysis was used.
 
-### Why risky
-- The dependency crosses a major version boundary.
-- The package declares an install script.
-
 ### Recommended actions
-- Inspect install scripts and package tarballs before merging.
-- Read upstream release notes and migration guidance.
+- Inspect install scripts and published tarballs for left-pad before merging.
+- Check release notes and migration guidance for left-pad before merging.
 
 ### Quick commands
 - `npm ls left-pad`
