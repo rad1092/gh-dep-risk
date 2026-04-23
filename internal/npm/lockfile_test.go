@@ -201,3 +201,84 @@ func TestParsePNPMLockfilePreservesWorkspaceLocalLinks(t *testing.T) {
 		t.Fatalf("unexpected workspace-local path %q", shared.Path)
 	}
 }
+
+func TestParseYarnClassicLockfileAndCollectRootPackages(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "yarn.root.head.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lockfile, err := ParseLockfile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lockfile.Manager != "yarn" {
+		t.Fatalf("expected yarn manager, got %q", lockfile.Manager)
+	}
+
+	view := lockfile.CollectTargetPackages("", []string{"left-pad", "chalk"})
+	if _, ok := view.Direct["chalk"]; !ok {
+		t.Fatalf("expected chalk to resolve as a direct yarn dependency")
+	}
+	if _, ok := view.Transitive["node_modules/follow-redirects"]; ok {
+		t.Fatalf("did not expect unrelated package in root fixture")
+	}
+	if _, ok := view.Transitive["node_modules/ansi-styles"]; !ok {
+		t.Fatalf("expected ansi-styles transitive dependency to be included")
+	}
+}
+
+func TestParseYarnClassicLockfileCollectsWorkspacePackages(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "yarn.workspace.head.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lockfile, err := ParseLockfile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	view := lockfile.CollectTargetPackages("apps/web", []string{"axios", "react"})
+	if _, ok := view.Direct["axios"]; !ok {
+		t.Fatalf("expected axios to resolve as a direct yarn workspace dependency")
+	}
+	if _, ok := view.Transitive["node_modules/follow-redirects"]; !ok {
+		t.Fatalf("expected follow-redirects transitive dependency to be included")
+	}
+	if view.Approximate {
+		t.Fatalf("expected exact yarn workspace attribution for hoisted classic fixture")
+	}
+}
+
+func TestParseYarnClassicLockfileCollectsStandalonePackages(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "yarn.standalone.head.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lockfile, err := ParseLockfile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	view := lockfile.CollectTargetPackages("services/api", []string{"lodash"})
+	if _, ok := view.Direct["lodash"]; !ok {
+		t.Fatalf("expected lodash to resolve as a direct standalone yarn dependency")
+	}
+}
+
+func TestParseYarnBerryLockfileReturnsUnsupportedFallbackError(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "yarn.unsupported.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ParseLockfile(data)
+	if err == nil {
+		t.Fatalf("expected unsupported yarn fallback error")
+	}
+	if !IsUnsupportedYarnFallback(err) {
+		t.Fatalf("expected unsupported yarn fallback error, got %v", err)
+	}
+}

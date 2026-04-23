@@ -4,13 +4,19 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 ## Unreleased
 
-- Hardened deterministic internal proof with broader target-shape and
-  dependency-review-path test matrices for npm and pnpm.
-- Centralized scoring weights, thresholds, and aggregate bonus rules so the
-  model is easier to audit without changing the JSON schema or exit codes.
-- Split shared JS lock-graph traversal from lockfile parsing details to reduce
-  manager-neutral abstraction debt while preserving current npm and pnpm
-  behavior.
+## v0.1.7
+
+- Expanded the dependency-review path to surface mixed-ecosystem pull requests
+  for Cargo, Composer, Go modules, Maven, npm, pip, pnpm, Poetry, RubyGems,
+  Swift Package Manager, and Yarn without silently narrowing results to npm or
+  pnpm.
+- Added narrow Yarn local fallback support for classic `yarn.lock` projects,
+  workspaces, and nested standalone targets while failing honestly for likely
+  Yarn Berry / Plug'n'Play cases that cannot be analyzed faithfully in this
+  release.
+- Introduced an explicit ecosystem-aware normalization layer for dependency
+  review data and ecosystem-aware target selection without changing the stable
+  JSON schema, CLI shape, or exit code meanings.
 
 ## v0.1.6
 

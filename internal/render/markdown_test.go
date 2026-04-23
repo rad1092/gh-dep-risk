@@ -38,7 +38,7 @@ func TestRenderMarkdown(t *testing.T) {
 			Notes:              []analysis.Note{{Code: analysis.NoteDependencyReviewFallback}},
 			Targets: []analysis.TargetAnalysisResult{
 				{
-					Target:                    analysis.AnalysisTarget{DisplayName: "root", ManifestPath: "package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindRoot},
+					Target:                    analysis.AnalysisTarget{DisplayName: "root", ManifestPath: "package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindRoot, PackageManager: "npm", Ecosystem: "npm"},
 					DependencyReviewAvailable: false,
 					Score:                     48,
 					Level:                     analysis.RiskLevelHigh,
@@ -70,7 +70,7 @@ func TestRenderMarkdown(t *testing.T) {
 	if !strings.Contains(output, "영향 범위") {
 		t.Fatalf("expected korean labels in markdown output")
 	}
-	if !strings.Contains(output, "타깃별 결과") {
+	if !strings.Contains(output, "타깃 결과") {
 		t.Fatalf("expected target section in markdown output")
 	}
 	if !strings.Contains(output, "`npm ls left-pad`") {

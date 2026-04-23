@@ -42,10 +42,10 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 	fs.StringVar(&opts.Lang, "lang", defaults.Lang, "output language: ko|en")
 	fs.BoolVar(&opts.Comment, "comment", false, "upsert a PR timeline comment")
 	fs.StringVar(&failLevel, "fail-level", string(defaults.FailLevel), "fail threshold: low|medium|high|critical|none")
-	fs.BoolVar(&opts.NoRegistry, "no-registry", false, "skip npm registry lookups")
+	fs.BoolVar(&opts.NoRegistry, "no-registry", false, "skip external package registry lookups")
 	fs.StringVar(&opts.BundleDir, "bundle-dir", defaults.BundleDir, "write human/json/markdown bundle files to a directory")
-	fs.Var(&paths, "path", "restrict analysis to a repo-relative directory or package.json path (repeatable)")
-	fs.BoolVar(&opts.ListTargets, "list-targets", defaults.ListTargets, "print detected npm/pnpm analysis targets and exit")
+	fs.Var(&paths, "path", "restrict analysis to a repo-relative directory or exact manifest path (repeatable)")
+	fs.BoolVar(&opts.ListTargets, "list-targets", defaults.ListTargets, "print detected dependency analysis targets and exit")
 	fs.Usage = func() { printPRUsage(stderr) }
 
 	parseArgs := normalizePRArgs(args)
@@ -183,13 +183,13 @@ func printPRUsage(w io.Writer) {
 	fmt.Fprintln(w, "  -fail-level string")
 	fmt.Fprintln(w, "    \tfail threshold: low|medium|high|critical|none (default \"none\")")
 	fmt.Fprintln(w, "  -no-registry")
-	fmt.Fprintln(w, "    \tskip npm registry lookups")
+	fmt.Fprintln(w, "    \tskip external package registry lookups")
 	fmt.Fprintln(w, "  -bundle-dir string")
 	fmt.Fprintln(w, "    \twrite human/json/markdown bundle files to a directory")
 	fmt.Fprintln(w, "  -path value")
-	fmt.Fprintln(w, "    \trestrict analysis to a repo-relative directory or package.json path (repeatable)")
+	fmt.Fprintln(w, "    \trestrict analysis to a repo-relative directory or exact manifest path (repeatable)")
 	fmt.Fprintln(w, "  -list-targets")
-	fmt.Fprintln(w, "    \tprint detected npm/pnpm analysis targets and exit")
+	fmt.Fprintln(w, "    \tprint detected dependency analysis targets and exit")
 	fmt.Fprintf(w, "\nConfig:\n  Reads %s from the current working directory when present. CLI flags override config values.\n", config.PRConfigFileName)
 }
 

@@ -14,8 +14,8 @@
   "blast_radius": "medium",
   "dependency_review_available": true,
   "summary": [
-    "2 npm dependency changes were detected.",
-    "2 npm targets were analyzed.",
+    "2 dependency changes were detected.",
+    "2 dependency targets were analyzed.",
     "Top risk signals: direct runtime addition."
   ],
   "risk_drivers": [

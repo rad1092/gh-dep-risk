@@ -8,15 +8,15 @@
 - Why risky: apps/web / axios adds a new direct runtime dependency.
 
 ### Summary
-- 2 npm dependency changes were detected.
-- 2 npm targets were analyzed.
+- 2 dependency changes were detected.
+- 2 dependency targets were analyzed.
 - Top risk signals: direct runtime addition.
 
 ### Targets
-- `apps/web` (workspace, score `48`, level `high`, blast `medium`)
+- `apps/web` (workspace, ecosystem=npm, score `48`, level `high`, blast `medium`)
   - `axios -> 1.7.0` (added/runtime, score `48`)
     - A new direct runtime dependency was added.
-- `packages/ui` (workspace, score `22`, level `medium`, blast `low`)
+- `packages/ui` (workspace, ecosystem=npm, score `22`, level `medium`, blast `low`)
   - `tailwind-merge -> 2.3.0` (added/runtime, score `22`)
     - A new direct runtime dependency was added.
 

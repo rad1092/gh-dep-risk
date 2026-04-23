@@ -115,13 +115,13 @@ func localizeDrivers(drivers []string, lang string) []string {
 		case analysis.DriverRecentlyPublished:
 			items = append(items, "대상 버전이 최근 7일 이내에 배포되었습니다.")
 		case analysis.DriverInstallScript:
-			items = append(items, "설치 스크립트가 감지되었습니다.")
+			items = append(items, "패키지가 install script를 선언합니다.")
 		case analysis.DriverPlatformRestricted:
-			items = append(items, "특정 OS/CPU 제약이 있는 패키지입니다.")
+			items = append(items, "특정 OS/CPU 대상으로 제한된 패키지입니다.")
 		case analysis.DriverTransitiveFive:
-			items = append(items, "새로운 전이 의존성이 5개 이상 추가되었습니다.")
+			items = append(items, "새 전이 의존성이 5개 이상 추가되었습니다.")
 		case analysis.DriverTransitiveFifteen:
-			items = append(items, "새로운 전이 의존성이 15개 이상 추가되었습니다.")
+			items = append(items, "새 전이 의존성이 15개 이상 추가되었습니다.")
 		default:
 			items = append(items, driver)
 		}
@@ -157,11 +157,11 @@ func localizeAction(action, lang string) string {
 	case analysis.ActionReviewAdvisories:
 		return "병합 전에 GHSA advisory를 검토하세요."
 	case analysis.ActionReviewChangelog:
-		return "업스트림 릴리스 노트와 마이그레이션 가이드를 읽으세요."
+		return "업스트림 릴리스 노트와 마이그레이션 가이드를 읽어 보세요."
 	case analysis.ActionRunTargetedTests:
-		return "영향 경로에 대한 타깃 테스트와 스모크 테스트를 실행하세요."
+		return "영향 경로에 대한 타깃 테스트와 스모크 체크를 실행하세요."
 	case analysis.ActionValidateSources:
-		return "레지스트리 외 소스나 git 소스를 별도로 검증하세요."
+		return "비레지스트리 또는 git 소스를 별도로 검증하세요."
 	default:
 		return action
 	}
@@ -173,7 +173,7 @@ func localizeNote(note analysis.Note, lang string) string {
 		case analysis.NoteDependencyReviewFallback:
 			return "Dependency review API was unavailable, so lockfile-only fallback analysis was used."
 		case analysis.NoteNonRegistrySource:
-			return fmt.Sprintf("%s resolves from a non-default source: %s", note.Dependency, note.Detail)
+			return fmt.Sprintf("%s resolves from a non-default package source: %s", note.Dependency, note.Detail)
 		default:
 			return note.Code
 		}
@@ -183,7 +183,7 @@ func localizeNote(note analysis.Note, lang string) string {
 	case analysis.NoteDependencyReviewFallback:
 		return "Dependency Review API를 사용할 수 없어 lockfile 기반 fallback 분석을 사용했습니다."
 	case analysis.NoteNonRegistrySource:
-		return fmt.Sprintf("%s 패키지가 기본 npm 레지스트리 외 소스로 해석됩니다: %s", note.Dependency, note.Detail)
+		return fmt.Sprintf("%s 패키지가 기본 레지스트리 외 소스로 해석됩니다: %s", note.Dependency, note.Detail)
 	default:
 		return note.Code
 	}
@@ -191,16 +191,16 @@ func localizeNote(note analysis.Note, lang string) string {
 
 func localizeSummaryCount(changeCount int, lang string) string {
 	if lang == "en" {
-		return fmt.Sprintf("%d npm dependency changes were detected.", changeCount)
+		return fmt.Sprintf("%d dependency changes were detected.", changeCount)
 	}
-	return fmt.Sprintf("npm 의존성 변경 %d건이 감지되었습니다.", changeCount)
+	return fmt.Sprintf("의존성 변경 %d건이 감지되었습니다.", changeCount)
 }
 
 func localizeSummaryTransitive(count int, lang string) string {
 	if lang == "en" {
 		return fmt.Sprintf("%d newly added transitive dependencies were detected.", count)
 	}
-	return fmt.Sprintf("새롭게 추가된 전이 의존성 %d건이 감지되었습니다.", count)
+	return fmt.Sprintf("새로 추가된 전이 의존성 %d건이 감지되었습니다.", count)
 }
 
 func localizeSummaryFallback(lang string) string {
@@ -221,7 +221,7 @@ func localizeSummarySources(names []string, lang string) string {
 		return fmt.Sprintf("Non-default dependency sources were detected for %s.", display)
 	}
 	if len(sortedNames) > 3 {
-		return fmt.Sprintf("기본 레지스트리 외 소스가 %d개 패키지에서 감지되었고 예시는 %s 입니다.", len(sortedNames), display)
+		return fmt.Sprintf("기본 레지스트리 외 소스가 %d개 패키지에서 감지되었고, 예시는 %s 입니다.", len(sortedNames), display)
 	}
 	return fmt.Sprintf("기본 레지스트리 외 소스가 %s 에서 감지되었습니다.", display)
 }
@@ -278,7 +278,7 @@ func localizeDriverLabel(driver, lang string) string {
 	case analysis.DriverInstallScript:
 		return "설치 스크립트"
 	case analysis.DriverPlatformRestricted:
-		return "플랫폼 제약"
+		return "플랫폼 제한"
 	case analysis.DriverTransitiveFive:
 		return "전이 의존성 5+"
 	case analysis.DriverTransitiveFifteen:

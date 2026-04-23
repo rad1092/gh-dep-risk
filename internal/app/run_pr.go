@@ -83,40 +83,36 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 		}
 		return nil
 	}
+	reviewSnapshot, err := loadDependencyReviewSnapshot(ctx, deps.GitHub, repo, pr.BaseSHA, pr.HeadSHA)
+	if err != nil {
+		return wrapGitHubError(err)
+	}
+	targets = mergeDiscoveredTargets(targets, reviewSnapshot.DerivedTargets)
+	selectedTargets, err = filterTargetsByRequestedPaths(targets, opts.Paths)
+	if err != nil {
+		return &ExitError{Code: 1, Err: err}
+	}
 
 	files, err := deps.GitHub.ListPullRequestFiles(ctx, repo, prNumber)
 	if err != nil {
 		return wrapGitHubError(err)
 	}
-	resolvedTargets, err := selectChangedTargets(selectedTargets, files)
+	resolvedTargets, err := selectChangedTargetsWithReview(selectedTargets, files, reviewSnapshot.TargetChanges)
 	if err != nil {
 		return &ExitError{Code: 1, Err: err}
 	}
 	if len(resolvedTargets) == 0 {
-		return &ExitError{Code: 2, Err: errors.New("no supported npm or pnpm dependency change found")}
+		return &ExitError{Code: 2, Err: errors.New("no supported dependency change found")}
 	}
 
 	now := time.Now().UTC()
 	inputs := make([]analysis.Input, 0, len(resolvedTargets))
 	for _, target := range resolvedTargets {
-		reviewChanges, dependencyReviewAvailable, err := compareTargetDependencies(ctx, deps.GitHub, repo, pr.BaseSHA, pr.HeadSHA, target)
-		if err != nil {
-			return wrapGitHubError(err)
+		reviewChanges := append([]analysis.ReviewChange(nil), reviewSnapshot.TargetChanges[target.Key()]...)
+		if !reviewSnapshot.Available && !target.LocalFallback {
+			return &ExitError{Code: 1, Err: fmt.Errorf("dependency review is unavailable and %s cannot be analyzed with local fallback in this release. Pass a PR from a repository where GitHub dependency review is enabled, or narrow to an npm/pnpm/yarn target with a supported lockfile", target.ManifestPath)}
 		}
-
-		baseManifest, err := cache.manifest(ctx, pr.BaseSHA, target.ManifestPath)
-		if err != nil {
-			return &ExitError{Code: 1, Err: err}
-		}
-		headManifest, err := cache.manifest(ctx, pr.HeadSHA, target.ManifestPath)
-		if err != nil {
-			return &ExitError{Code: 1, Err: err}
-		}
-		baseLockfile, err := cache.lockfile(ctx, pr.BaseSHA, target.LockfilePath)
-		if err != nil {
-			return &ExitError{Code: 1, Err: err}
-		}
-		headLockfile, err := cache.lockfile(ctx, pr.HeadSHA, target.LockfilePath)
+		baseManifest, headManifest, baseLockfile, headLockfile, err := loadLocalTargetData(ctx, cache, pr.BaseSHA, pr.HeadSHA, target, reviewSnapshot.Available)
 		if err != nil {
 			return &ExitError{Code: 1, Err: err}
 		}
@@ -124,7 +120,7 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 		inputs = append(inputs, analysis.Input{
 			Now:                       now,
 			Target:                    target,
-			DependencyReviewAvailable: dependencyReviewAvailable,
+			DependencyReviewAvailable: reviewSnapshot.Available,
 			ReviewChanges:             reviewChanges,
 			BaseManifest:              baseManifest,
 			HeadManifest:              headManifest,
@@ -154,11 +150,11 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 		targetResults = append(targetResults, analysis.TargetResult(input.Target, result))
 	}
 	if len(targetResults) == 0 {
-		return &ExitError{Code: 2, Err: errors.New("no supported npm or pnpm dependency change found")}
+		return &ExitError{Code: 2, Err: errors.New("no supported dependency change found")}
 	}
 	result := analysis.AggregateResults(targetResults)
 	if !analysis.HasMeaningfulChange(result) {
-		return &ExitError{Code: 2, Err: errors.New("no supported npm or pnpm dependency change found")}
+		return &ExitError{Code: 2, Err: errors.New("no supported dependency change found")}
 	}
 
 	report := render.Report{
@@ -269,46 +265,6 @@ func parsePRArg(arg string) (ghclient.Repo, int, bool, error) {
 	}, number, true, nil
 }
 
-func toReviewChanges(changes []ghclient.DependencyReviewChange) []analysis.ReviewChange {
-	result := make([]analysis.ReviewChange, 0, len(changes))
-	for _, change := range changes {
-		if !isSupportedJSEcosystem(change.Ecosystem) {
-			continue
-		}
-		if !isSupportedManifestPath(change.Manifest) {
-			continue
-		}
-		vulns := make([]analysis.Vulnerability, 0, len(change.Vulnerabilities))
-		for _, vuln := range change.Vulnerabilities {
-			vulns = append(vulns, analysis.Vulnerability{
-				Severity: vuln.Severity,
-				GHSAID:   vuln.GHSAID,
-				Summary:  vuln.Summary,
-				URL:      vuln.URL,
-			})
-		}
-		result = append(result, analysis.ReviewChange{
-			ChangeType:      analysis.ChangeType(change.ChangeType),
-			Manifest:        change.Manifest,
-			Name:            change.Name,
-			Version:         change.Version,
-			Vulnerabilities: vulns,
-		})
-	}
-	return result
-}
-
-func compareTargetDependencies(ctx context.Context, client ghclient.Client, repo ghclient.Repo, baseSHA, headSHA string, target analysis.AnalysisTarget) ([]analysis.ReviewChange, bool, error) {
-	reviewChanges, err := client.CompareDependenciesForManifest(ctx, repo, baseSHA, headSHA, target.ManifestPath)
-	if err != nil {
-		if ghclient.IsDependencyReviewUnavailable(err) {
-			return nil, false, nil
-		}
-		return nil, false, err
-	}
-	return toReviewChanges(reviewChanges), true, nil
-}
-
 func collectRegistryTargets(inputs []analysis.Input) []analysis.PackageVersion {
 	seen := map[analysis.PackageVersion]struct{}{}
 	for _, input := range inputs {
@@ -355,20 +311,36 @@ func wrapCommentModeError(repo ghclient.Repo, err error) error {
 	return wrapGitHubError(err)
 }
 
-func isSupportedManifestPath(manifestPath string) bool {
-	switch path.Base(strings.TrimSpace(manifestPath)) {
-	case "package.json", "package-lock.json", "pnpm-lock.yaml":
-		return true
-	default:
-		return false
+func loadLocalTargetData(ctx context.Context, cache *repoDataCache, baseSHA, headSHA string, target analysis.AnalysisTarget, dependencyReviewAvailable bool) (*npm.PackageManifest, *npm.PackageManifest, *npm.Lockfile, *npm.Lockfile, error) {
+	var baseManifest, headManifest *npm.PackageManifest
+	if path.Base(target.ManifestPath) == "package.json" {
+		var err error
+		baseManifest, err = cache.manifest(ctx, baseSHA, target.ManifestPath)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		headManifest, err = cache.manifest(ctx, headSHA, target.ManifestPath)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
 	}
-}
+	if !target.LocalFallback || strings.TrimSpace(target.LockfilePath) == "" {
+		return baseManifest, headManifest, nil, nil, nil
+	}
 
-func isSupportedJSEcosystem(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "npm", "pnpm", "node", "javascript":
-		return true
-	default:
-		return false
+	baseLockfile, err := cache.lockfile(ctx, baseSHA, target.LockfilePath)
+	if err != nil {
+		if dependencyReviewAvailable && npm.IsUnsupportedYarnFallback(err) {
+			return baseManifest, headManifest, nil, nil, nil
+		}
+		return nil, nil, nil, nil, err
 	}
+	headLockfile, err := cache.lockfile(ctx, headSHA, target.LockfilePath)
+	if err != nil {
+		if dependencyReviewAvailable && npm.IsUnsupportedYarnFallback(err) {
+			return baseManifest, headManifest, nil, nil, nil
+		}
+		return nil, nil, nil, nil, err
+	}
+	return baseManifest, headManifest, baseLockfile, headLockfile, nil
 }

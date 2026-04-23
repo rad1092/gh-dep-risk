@@ -1,0 +1,18 @@
+# yarn lockfile v1
+
+chalk@^5.0.0:
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/chalk/-/chalk-5.0.0.tgz"
+  integrity sha512-chalk500
+  dependencies:
+    ansi-styles "^6.0.0"
+
+ansi-styles@^6.0.0:
+  version "6.0.0"
+  resolved "https://registry.yarnpkg.com/ansi-styles/-/ansi-styles-6.0.0.tgz"
+  integrity sha512-ansi600
+
+left-pad@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/left-pad/-/left-pad-2.0.0.tgz"
+  integrity sha512-leftpad200

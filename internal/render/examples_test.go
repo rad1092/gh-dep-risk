@@ -90,7 +90,7 @@ func sampleSingleTargetReport() Report {
 			Notes:              []analysis.Note{{Code: analysis.NoteDependencyReviewFallback}},
 			Targets: []analysis.TargetAnalysisResult{
 				{
-					Target:                    analysis.AnalysisTarget{DisplayName: "root", ManifestPath: "package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindRoot},
+					Target:                    analysis.AnalysisTarget{DisplayName: "root", ManifestPath: "package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindRoot, PackageManager: "npm", Ecosystem: "npm"},
 					DependencyReviewAvailable: false,
 					Score:                     48,
 					Level:                     analysis.RiskLevelHigh,
@@ -169,7 +169,7 @@ func sampleMultiTargetReport() Report {
 			},
 			Targets: []analysis.TargetAnalysisResult{
 				{
-					Target:                    analysis.AnalysisTarget{DisplayName: "apps/web", ManifestPath: "apps/web/package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindWorkspace},
+					Target:                    analysis.AnalysisTarget{DisplayName: "apps/web", ManifestPath: "apps/web/package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindWorkspace, PackageManager: "npm", Ecosystem: "npm"},
 					DependencyReviewAvailable: true,
 					Score:                     48,
 					Level:                     analysis.RiskLevelHigh,
@@ -192,7 +192,7 @@ func sampleMultiTargetReport() Report {
 					QuickCommands:      []string{"cd apps/web && npm ls --all", "cd apps/web && npm ls axios"},
 				},
 				{
-					Target:                    analysis.AnalysisTarget{DisplayName: "packages/ui", ManifestPath: "packages/ui/package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindWorkspace},
+					Target:                    analysis.AnalysisTarget{DisplayName: "packages/ui", ManifestPath: "packages/ui/package.json", LockfilePath: "package-lock.json", Kind: analysis.TargetKindWorkspace, PackageManager: "npm", Ecosystem: "npm"},
 					DependencyReviewAvailable: true,
 					Score:                     22,
 					Level:                     analysis.RiskLevelMedium,

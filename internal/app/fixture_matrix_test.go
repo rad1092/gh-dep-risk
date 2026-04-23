@@ -88,6 +88,38 @@ func TestRunPRTargetShapeMatrix(t *testing.T) {
 			wantQuickCommands: []string{"npm ls --all", "cd tools/cli && pnpm list --depth Infinity"},
 			wantReview:        true,
 		},
+		{
+			name:              "yarn root",
+			client:            newYarnRootFakeGitHubClient,
+			opts:              RunPROptions{Format: "json"},
+			wantTargets:       []string{"root"},
+			wantQuickCommands: []string{"yarn list --depth=9999", "yarn why chalk"},
+			wantReview:        true,
+		},
+		{
+			name:              "yarn workspace",
+			client:            newYarnWorkspaceFakeGitHubClient,
+			opts:              RunPROptions{Format: "json", Paths: []string{"apps/web"}},
+			wantTargets:       []string{"apps/web"},
+			wantQuickCommands: []string{"cd apps/web && yarn list --depth=9999", "cd apps/web && yarn why axios"},
+			wantReview:        true,
+		},
+		{
+			name:              "yarn standalone nested project",
+			client:            newYarnStandaloneFakeGitHubClient,
+			opts:              RunPROptions{Format: "json", Paths: []string{"services/api"}},
+			wantTargets:       []string{"services/api"},
+			wantQuickCommands: []string{"cd services/api && yarn list --depth=9999", "cd services/api && yarn why lodash"},
+			wantReview:        true,
+		},
+		{
+			name:              "mixed npm pnpm and yarn repo",
+			client:            newMixedJSPackageManagerFakeGitHubClient,
+			opts:              RunPROptions{Format: "json"},
+			wantTargets:       []string{"root", "tools/cli", "services/api"},
+			wantQuickCommands: []string{"npm ls --all", "cd tools/cli && pnpm list --depth Infinity", "cd services/api && yarn list --depth=9999"},
+			wantReview:        true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -160,6 +192,21 @@ func TestRunPRDependencyReviewModeMatrix(t *testing.T) {
 			},
 			wantReview: false,
 		},
+		{
+			name:       "yarn dependency review available",
+			client:     newYarnRootFakeGitHubClient,
+			opts:       RunPROptions{Format: "json"},
+			wantReview: true,
+		},
+		{
+			name:   "yarn dependency review fallback",
+			client: newYarnRootFakeGitHubClient,
+			opts:   RunPROptions{Format: "json"},
+			degrade: func(client *fakeGitHubClient) {
+				client.compareErr = &api.HTTPError{StatusCode: 404, Message: "dependency review disabled"}
+			},
+			wantReview: false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -208,6 +255,153 @@ func newPNPMRootFakeGitHubClient(t *testing.T) *fakeGitHubClient {
 	client.filesByKey[fileKey("pnpm-lock.yaml", "head-sha")] = readFixture(t, "pnpm.root.head.lock.yaml")
 	client.compareChanges = []ghclient.DependencyReviewChange{
 		{Name: "axios", Manifest: "package.json", Ecosystem: "pnpm", ChangeType: "added", Version: "1.7.0"},
+	}
+	return client
+}
+
+func newYarnRootFakeGitHubClient(t *testing.T) *fakeGitHubClient {
+	t.Helper()
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "Update yarn root dependencies",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "package.json", Status: "modified"},
+		{Filename: "yarn.lock", Status: "modified"},
+	}
+	client.repositoryFilesByRef["base-sha"] = []string{"package.json", "yarn.lock"}
+	client.repositoryFilesByRef["head-sha"] = []string{"package.json", "yarn.lock"}
+	client.filesByKey[fileKey("package.json", "base-sha")] = readFixture(t, "base.package.json")
+	client.filesByKey[fileKey("package.json", "head-sha")] = readFixture(t, "head.package.json")
+	client.filesByKey[fileKey("yarn.lock", "base-sha")] = readFixture(t, "yarn.root.base.lock")
+	client.filesByKey[fileKey("yarn.lock", "head-sha")] = readFixture(t, "yarn.root.head.lock")
+	client.compareChanges = []ghclient.DependencyReviewChange{
+		{Name: "left-pad", Manifest: "package.json", Ecosystem: "yarn", ChangeType: "removed", Version: "1.0.0"},
+		{Name: "left-pad", Manifest: "package.json", Ecosystem: "yarn", ChangeType: "added", Version: "2.0.0"},
+		{Name: "chalk", Manifest: "package.json", Ecosystem: "yarn", ChangeType: "added", Version: "5.0.0"},
+	}
+	return client
+}
+
+func newYarnWorkspaceFakeGitHubClient(t *testing.T) *fakeGitHubClient {
+	t.Helper()
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "Update yarn workspace dependencies",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "apps/web/package.json", Status: "modified"},
+		{Filename: "yarn.lock", Status: "modified"},
+	}
+	client.repositoryFilesByRef["base-sha"] = []string{
+		"package.json",
+		"yarn.lock",
+		"apps/web/package.json",
+		"packages/ui/package.json",
+	}
+	client.repositoryFilesByRef["head-sha"] = append([]string(nil), client.repositoryFilesByRef["base-sha"]...)
+	client.filesByKey[fileKey("package.json", "base-sha")] = readFixture(t, "workspace.root.package.json")
+	client.filesByKey[fileKey("package.json", "head-sha")] = readFixture(t, "workspace.root.package.json")
+	client.filesByKey[fileKey("yarn.lock", "base-sha")] = readFixture(t, "yarn.workspace.base.lock")
+	client.filesByKey[fileKey("yarn.lock", "head-sha")] = readFixture(t, "yarn.workspace.head.lock")
+	client.filesByKey[fileKey("apps/web/package.json", "base-sha")] = readFixture(t, "workspace.apps-web.base.package.json")
+	client.filesByKey[fileKey("apps/web/package.json", "head-sha")] = readFixture(t, "workspace.apps-web.head.package.json")
+	client.filesByKey[fileKey("packages/ui/package.json", "base-sha")] = readFixture(t, "workspace.packages-ui.base.package.json")
+	client.filesByKey[fileKey("packages/ui/package.json", "head-sha")] = readFixture(t, "workspace.packages-ui.head.package.json")
+	client.compareChanges = []ghclient.DependencyReviewChange{
+		{Name: "axios", Manifest: "apps/web/package.json", Ecosystem: "yarn", ChangeType: "added", Version: "1.7.0"},
+	}
+	return client
+}
+
+func newYarnStandaloneFakeGitHubClient(t *testing.T) *fakeGitHubClient {
+	t.Helper()
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "Update yarn standalone dependency",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "services/api/package.json", Status: "modified"},
+		{Filename: "services/api/yarn.lock", Status: "modified"},
+	}
+	client.repositoryFilesByRef["base-sha"] = []string{"services/api/package.json", "services/api/yarn.lock"}
+	client.repositoryFilesByRef["head-sha"] = []string{"services/api/package.json", "services/api/yarn.lock"}
+	client.filesByKey[fileKey("services/api/package.json", "base-sha")] = readFixture(t, "standalone.service.base.package.json")
+	client.filesByKey[fileKey("services/api/package.json", "head-sha")] = readFixture(t, "standalone.service.head.package.json")
+	client.filesByKey[fileKey("services/api/yarn.lock", "base-sha")] = readFixture(t, "yarn.standalone.base.lock")
+	client.filesByKey[fileKey("services/api/yarn.lock", "head-sha")] = readFixture(t, "yarn.standalone.head.lock")
+	client.compareChanges = []ghclient.DependencyReviewChange{
+		{Name: "lodash", Manifest: "services/api/package.json", Ecosystem: "yarn", ChangeType: "removed", Version: "4.17.20"},
+		{Name: "lodash", Manifest: "services/api/package.json", Ecosystem: "yarn", ChangeType: "added", Version: "4.17.21"},
+	}
+	return client
+}
+
+func newMixedJSPackageManagerFakeGitHubClient(t *testing.T) *fakeGitHubClient {
+	t.Helper()
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "Update mixed JS managers",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "package.json", Status: "modified"},
+		{Filename: "package-lock.json", Status: "modified"},
+		{Filename: "tools/cli/package.json", Status: "modified"},
+		{Filename: "tools/cli/pnpm-lock.yaml", Status: "modified"},
+		{Filename: "services/api/package.json", Status: "modified"},
+		{Filename: "services/api/yarn.lock", Status: "modified"},
+	}
+	client.repositoryFilesByRef["base-sha"] = []string{
+		"package.json",
+		"package-lock.json",
+		"tools/cli/package.json",
+		"tools/cli/pnpm-lock.yaml",
+		"services/api/package.json",
+		"services/api/yarn.lock",
+	}
+	client.repositoryFilesByRef["head-sha"] = append([]string(nil), client.repositoryFilesByRef["base-sha"]...)
+	client.filesByKey[fileKey("package.json", "base-sha")] = readFixture(t, "base.package.json")
+	client.filesByKey[fileKey("package.json", "head-sha")] = readFixture(t, "head.package.json")
+	client.filesByKey[fileKey("package-lock.json", "base-sha")] = readFixture(t, "base.package-lock.json")
+	client.filesByKey[fileKey("package-lock.json", "head-sha")] = readFixture(t, "head.package-lock.json")
+	client.filesByKey[fileKey("tools/cli/package.json", "base-sha")] = readFixture(t, "pnpm.standalone.base.package.json")
+	client.filesByKey[fileKey("tools/cli/package.json", "head-sha")] = readFixture(t, "pnpm.standalone.head.package.json")
+	client.filesByKey[fileKey("tools/cli/pnpm-lock.yaml", "base-sha")] = readFixture(t, "pnpm.standalone.base.lock.yaml")
+	client.filesByKey[fileKey("tools/cli/pnpm-lock.yaml", "head-sha")] = readFixture(t, "pnpm.standalone.head.lock.yaml")
+	client.filesByKey[fileKey("services/api/package.json", "base-sha")] = readFixture(t, "standalone.service.base.package.json")
+	client.filesByKey[fileKey("services/api/package.json", "head-sha")] = readFixture(t, "standalone.service.head.package.json")
+	client.filesByKey[fileKey("services/api/yarn.lock", "base-sha")] = readFixture(t, "yarn.standalone.base.lock")
+	client.filesByKey[fileKey("services/api/yarn.lock", "head-sha")] = readFixture(t, "yarn.standalone.head.lock")
+	client.compareChanges = []ghclient.DependencyReviewChange{
+		{Name: "left-pad", Manifest: "package.json", Ecosystem: "npm", ChangeType: "removed", Version: "1.0.0"},
+		{Name: "left-pad", Manifest: "package.json", Ecosystem: "npm", ChangeType: "added", Version: "2.0.0"},
+		{Name: "commander", Manifest: "tools/cli/package.json", Ecosystem: "pnpm", ChangeType: "added", Version: "12.1.0"},
+		{Name: "lodash", Manifest: "services/api/package.json", Ecosystem: "yarn", ChangeType: "removed", Version: "4.17.20"},
+		{Name: "lodash", Manifest: "services/api/package.json", Ecosystem: "yarn", ChangeType: "added", Version: "4.17.21"},
 	}
 	return client
 }

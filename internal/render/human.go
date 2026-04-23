@@ -41,7 +41,7 @@ func renderHuman(report Report, lang string) string {
 		b.WriteString(targetSectionTitle(lang))
 		b.WriteString(":\n")
 		for _, target := range report.Analysis.Targets {
-			fmt.Fprintf(&b, "- %s [%s] score=%d (%s), blast=%s\n", displayTarget(target.Target), target.Target.Kind, target.Score, target.Level, target.BlastRadius)
+			fmt.Fprintf(&b, "- %s [%s] score=%d (%s), blast=%s\n", displayTarget(target.Target), targetContext(target.Target), target.Score, target.Level, target.BlastRadius)
 			for _, change := range target.ChangedDependencies {
 				fmt.Fprintf(&b, "  %s [%s/%s] score=%d\n", displayChange(change), change.ChangeType, change.Scope, change.Score)
 				if len(change.RiskDrivers) > 0 {

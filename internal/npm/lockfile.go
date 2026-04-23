@@ -2,6 +2,7 @@ package npm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -61,6 +62,22 @@ const (
 	SourceUnknown         SourceKind = "unknown"
 )
 
+type UnsupportedYarnFallbackError struct {
+	Reason string
+}
+
+func (e UnsupportedYarnFallbackError) Error() string {
+	if strings.TrimSpace(e.Reason) == "" {
+		return "yarn local fallback is unsupported for this lockfile"
+	}
+	return e.Reason
+}
+
+func IsUnsupportedYarnFallback(err error) bool {
+	var unsupported UnsupportedYarnFallbackError
+	return errors.As(err, &unsupported)
+}
+
 func ParseLockfile(data []byte) (*Lockfile, error) {
 	if len(data) == 0 {
 		return nil, nil
@@ -72,7 +89,10 @@ func ParseLockfile(data []byte) (*Lockfile, error) {
 	if strings.HasPrefix(trimmed, "{") {
 		return parseNPMLockfile(data)
 	}
-	return parsePNPMLockfile(data)
+	if looksLikePNPMLockfile(trimmed) {
+		return parsePNPMLockfile(data)
+	}
+	return parseYarnLockfile(data)
 }
 
 func parseNPMLockfile(data []byte) (*Lockfile, error) {
@@ -190,6 +210,108 @@ func parsePNPMLockfile(data []byte) (*Lockfile, error) {
 	return lockfile, nil
 }
 
+func parseYarnLockfile(data []byte) (*Lockfile, error) {
+	normalized := strings.ReplaceAll(string(data), "\r\n", "\n")
+	trimmed := strings.TrimSpace(normalized)
+	switch {
+	case strings.Contains(trimmed, "__metadata:"):
+		return nil, UnsupportedYarnFallbackError{Reason: "Yarn Berry / Plug'n'Play lockfiles are not supported for local fallback in this release; rely on GitHub dependency review or use a Yarn Classic node_modules lockfile"}
+	case !strings.Contains(trimmed, "yarn lockfile v1"):
+		return nil, UnsupportedYarnFallbackError{Reason: "unsupported yarn.lock format for local fallback; only Yarn Classic v1 lockfiles are supported in this release"}
+	}
+
+	lockfile := &Lockfile{
+		Manager:   "yarn",
+		Packages:  map[string]LockPackage{},
+		Importers: map[string]LockImporter{},
+	}
+	seen := map[string]string{}
+	lines := strings.Split(normalized, "\n")
+	for i := 0; i < len(lines); {
+		line := strings.TrimRight(lines[i], " \t")
+		trimmedLine := strings.TrimSpace(line)
+		switch {
+		case trimmedLine == "", strings.HasPrefix(trimmedLine, "#"):
+			i++
+			continue
+		case strings.HasPrefix(line, " "):
+			i++
+			continue
+		case !strings.HasSuffix(trimmedLine, ":"):
+			i++
+			continue
+		}
+
+		selectors := strings.TrimSuffix(trimmedLine, ":")
+		name := yarnPackageName(selectors)
+		if name == "" {
+			i++
+			continue
+		}
+
+		entry := LockPackage{
+			Name:         name,
+			Dependencies: map[string]string{},
+		}
+		i++
+		inDependencies := false
+		for i < len(lines) {
+			childLine := strings.TrimRight(lines[i], " \t")
+			trimmedChild := strings.TrimSpace(childLine)
+			if trimmedChild == "" {
+				i++
+				continue
+			}
+			if !strings.HasPrefix(childLine, "  ") {
+				break
+			}
+			if strings.HasPrefix(childLine, "    ") && inDependencies {
+				depName, depVersion, ok := parseYarnDependencyLine(trimmedChild)
+				if ok {
+					entry.Dependencies[depName] = depVersion
+				}
+				i++
+				continue
+			}
+
+			inDependencies = false
+			switch {
+			case strings.HasPrefix(trimmedChild, "version "):
+				entry.Version = yarnPropertyValue(trimmedChild, "version")
+			case strings.HasPrefix(trimmedChild, "resolved "):
+				entry.Resolved = yarnPropertyValue(trimmedChild, "resolved")
+			case strings.HasPrefix(trimmedChild, "integrity "):
+				entry.Integrity = yarnPropertyValue(trimmedChild, "integrity")
+			case strings.HasPrefix(trimmedChild, "dependencies:"):
+				inDependencies = true
+			}
+			i++
+		}
+		if entry.Version == "" {
+			continue
+		}
+		key := entry.Name + "@" + entry.Version
+		if existingPath, ok := seen[key]; ok {
+			existing := lockfile.Packages[existingPath]
+			for depName, depVersion := range entry.Dependencies {
+				existing.Dependencies[depName] = depVersion
+			}
+			if existing.Resolved == "" {
+				existing.Resolved = entry.Resolved
+			}
+			if existing.Integrity == "" {
+				existing.Integrity = entry.Integrity
+			}
+			lockfile.Packages[existingPath] = existing
+			continue
+		}
+		entry.Path = yarnPackagePath(lockfile.Packages, entry.Name, entry.Version)
+		lockfile.Packages[entry.Path] = entry
+		seen[key] = entry.Path
+	}
+	return lockfile, nil
+}
+
 type pnpmDependency struct {
 	Specifier string `yaml:"specifier"`
 	Version   string `yaml:"version"`
@@ -230,6 +352,64 @@ func flattenLegacyDependencies(target map[string]LockPackage, parent string, dep
 			Dependencies:     cloneMap(dep.Requires),
 		}
 		flattenLegacyDependencies(target, path, dep.Dependencies)
+	}
+}
+
+func looksLikePNPMLockfile(value string) bool {
+	return strings.Contains(value, "lockfileVersion:") || strings.Contains(value, "importers:")
+}
+
+func yarnPackageName(selectors string) string {
+	first := selectors
+	if index := strings.Index(first, ","); index >= 0 {
+		first = first[:index]
+	}
+	first = strings.Trim(strings.TrimSpace(first), "\"")
+	if index := strings.Index(first, "@npm:"); index > 0 {
+		return first[:index]
+	}
+	if strings.HasPrefix(first, "@") {
+		slash := strings.Index(first, "/")
+		if slash >= 0 {
+			rest := first[slash+1:]
+			if offset := strings.LastIndex(rest, "@"); offset >= 0 {
+				return first[:slash+1+offset]
+			}
+		}
+	}
+	if index := strings.LastIndex(first, "@"); index > 0 {
+		return first[:index]
+	}
+	return first
+}
+
+func yarnPropertyValue(line, key string) string {
+	value := strings.TrimSpace(strings.TrimPrefix(line, key))
+	return strings.Trim(value, "\"")
+}
+
+func parseYarnDependencyLine(line string) (string, string, bool) {
+	parts := strings.SplitN(line, " ", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	return strings.TrimSpace(parts[0]), strings.Trim(strings.TrimSpace(parts[1]), "\""), true
+}
+
+func yarnPackagePath(existing map[string]LockPackage, name, version string) string {
+	canonical := joinNodeModules("", name)
+	if _, ok := existing[canonical]; !ok {
+		return canonical
+	}
+	candidate := path.Clean("node_modules/.yarn/" + strings.ReplaceAll(strings.TrimPrefix(name, "@"), "/", "+") + "@" + version)
+	if _, ok := existing[candidate]; !ok {
+		return candidate
+	}
+	for index := 2; ; index++ {
+		next := fmt.Sprintf("%s#%d", candidate, index)
+		if _, ok := existing[next]; !ok {
+			return next
+		}
 	}
 }
 

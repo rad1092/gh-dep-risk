@@ -88,9 +88,17 @@ type AnalysisTarget struct {
 	Kind              TargetKind `json:"kind"`
 	WorkspaceRootPath string     `json:"workspace_root_path,omitempty"`
 	PackageManager    string     `json:"-"`
+	Ecosystem         string     `json:"-"`
+	TargetID          string     `json:"-"`
+	OwningDirectory   string     `json:"-"`
+	LocalFallback     bool       `json:"-"`
+	FallbackReason    string     `json:"-"`
 }
 
 func (t AnalysisTarget) Directory() string {
+	if t.OwningDirectory != "" {
+		return t.OwningDirectory
+	}
 	if t.ManifestPath == "" || t.ManifestPath == "package.json" {
 		return ""
 	}
@@ -102,6 +110,9 @@ func (t AnalysisTarget) Directory() string {
 }
 
 func (t AnalysisTarget) Key() string {
+	if t.TargetID != "" {
+		return t.TargetID
+	}
 	return t.ManifestPath
 }
 
@@ -117,6 +128,8 @@ type ReviewChange struct {
 	Manifest        string
 	Name            string
 	Version         string
+	Ecosystem       string
+	PackageManager  string
 	Vulnerabilities []Vulnerability
 }
 
@@ -237,6 +250,11 @@ func LevelForScore(score int) RiskLevel {
 }
 
 func CollectRegistryTargets(input Input) []PackageVersion {
+	switch input.Target.PackageManager {
+	case "npm", "pnpm", "yarn":
+	default:
+		return nil
+	}
 	directNames := targetDirectNames(input)
 	candidates := collectCandidateSummaries(input, buildTargetLockViews(input, directNames), directNames)
 	seen := map[PackageVersion]struct{}{}

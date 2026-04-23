@@ -262,13 +262,13 @@ func TestRunPRListTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		"Detected JS package targets:",
-		"- root [root, npm]",
+		"Detected dependency targets:",
+		"- root [root, ecosystem=npm, manager=npm]",
 		"manifest: package.json",
-		"- apps/web [workspace, npm]",
+		"- apps/web [workspace, ecosystem=npm, manager=npm]",
 		"manifest: apps/web/package.json",
 		"lockfile: package-lock.json",
-		"- services/api [standalone, npm]",
+		"- services/api [standalone, ecosystem=npm, manager=npm]",
 	} {
 		if !strings.Contains(stdout, expected) {
 			t.Fatalf("expected target listing to contain %q, got %q", expected, stdout)
@@ -297,7 +297,7 @@ func TestRunPRListTargetsSkipsAnalysisAndCommentPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "- apps/web [workspace, npm]") {
+	if !strings.Contains(stdout.String(), "- apps/web [workspace, ecosystem=npm, manager=npm]") {
 		t.Fatalf("expected filtered target output, got %q", stdout.String())
 	}
 	if client.listPullRequestCalls != 0 {
@@ -346,11 +346,8 @@ func TestRunPRPathFiltering(t *testing.T) {
 	if len(payload.Targets) != 1 || payload.Targets[0].Target.DisplayName != "apps/web" {
 		t.Fatalf("expected only apps/web target, got %#v", payload.Targets)
 	}
-	if client.compareManifestCalls["apps/web/package.json"] != 1 {
-		t.Fatalf("expected apps/web manifest compare call")
-	}
-	if client.compareManifestCalls["packages/ui/package.json"] != 0 {
-		t.Fatalf("expected packages/ui manifest compare to be skipped")
+	if client.compareCalls != 1 {
+		t.Fatalf("expected a single unscoped dependency review call, got %d", client.compareCalls)
 	}
 }
 
@@ -378,11 +375,11 @@ func TestRunPRListTargetsForPNPMIncludesManagerDistinction(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		"Detected JS package targets:",
-		"- root [root, pnpm]",
-		"- apps/web [workspace, pnpm]",
-		"- packages/ui [workspace, pnpm]",
-		"- tools/cli [standalone, pnpm]",
+		"Detected dependency targets:",
+		"- root [root, ecosystem=pnpm, manager=pnpm]",
+		"- apps/web [workspace, ecosystem=pnpm, manager=pnpm]",
+		"- packages/ui [workspace, ecosystem=pnpm, manager=pnpm]",
+		"- tools/cli [standalone, ecosystem=pnpm, manager=pnpm]",
 		"lockfile: pnpm-lock.yaml",
 	} {
 		if !strings.Contains(stdout, expected) {
@@ -423,7 +420,7 @@ func TestRunPRPNPMDependencyReviewFallback(t *testing.T) {
 		{Filename: "apps/web/package.json", Status: "modified"},
 		{Filename: "pnpm-lock.yaml", Status: "modified"},
 	}
-	client.compareManifestErr["apps/web/package.json"] = &api.HTTPError{StatusCode: 404, Message: "dependency review disabled"}
+	client.compareErr = &api.HTTPError{StatusCode: 404, Message: "dependency review disabled"}
 
 	stdout, _, err := runPRWithClient(t, client, RunPROptions{Format: "json", Paths: []string{"apps/web"}})
 	if err != nil {
@@ -456,6 +453,151 @@ func TestRunPRSupportsMixedNPMPNPMTargets(t *testing.T) {
 	}
 	if !containsString(payload.QuickCommands, "npm ls --all") || !containsString(payload.QuickCommands, "cd tools/cli && pnpm list --depth Infinity") {
 		t.Fatalf("expected mixed-manager quick commands, got %#v", payload.QuickCommands)
+	}
+}
+
+func TestRunPRSupportsMixedReviewOnlyAndJSDependencyReviewTargets(t *testing.T) {
+	client := newConfiguredFakeGitHubClient(t)
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "package.json", Status: "modified"},
+		{Filename: "package-lock.json", Status: "modified"},
+		{Filename: "backend/go.mod", Status: "modified"},
+	}
+	client.repositoryFilesByRef["base-sha"] = append(client.repositoryFilesByRef["base-sha"], "backend/go.mod")
+	client.repositoryFilesByRef["head-sha"] = append(client.repositoryFilesByRef["head-sha"], "backend/go.mod")
+	client.compareChanges = []ghclient.DependencyReviewChange{
+		{Name: "left-pad", Manifest: "package.json", Ecosystem: "npm", ChangeType: "removed", Version: "1.0.0"},
+		{Name: "left-pad", Manifest: "package.json", Ecosystem: "npm", ChangeType: "added", Version: "2.0.0"},
+		{Name: "golang.org/x/text", Manifest: "backend/go.mod", Ecosystem: "gomod", ChangeType: "added", Version: "0.16.0"},
+	}
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{Format: "human"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"backend [standalone, ecosystem=go-modules",
+		"left-pad",
+		"golang.org/x/text",
+	} {
+		if !strings.Contains(stdout, expected) {
+			t.Fatalf("expected mixed-ecosystem human output to contain %q, got %q", expected, stdout)
+		}
+	}
+	if !strings.Contains(stdout, "npm ls --all") {
+		t.Fatalf("expected JS quick command to remain present, got %q", stdout)
+	}
+	if strings.Contains(stdout, "go list") {
+		t.Fatalf("did not expect speculative non-JS quick commands, got %q", stdout)
+	}
+}
+
+func TestRunPRListTargetsIncludesEcosystemAwareNonJSTargets(t *testing.T) {
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "List mixed targets",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.repositoryFilesByRef["base-sha"] = []string{"backend/go.mod", "pyproject.toml"}
+	client.repositoryFilesByRef["head-sha"] = []string{"backend/go.mod", "pyproject.toml"}
+	client.filesByKey[fileKey("pyproject.toml", "base-sha")] = []byte("[tool.poetry]\nname = \"demo\"\nversion = \"0.1.0\"\n")
+	client.filesByKey[fileKey("pyproject.toml", "head-sha")] = []byte("[tool.poetry]\nname = \"demo\"\nversion = \"0.1.0\"\n")
+
+	stdout, _, err := runPRWithClient(t, client, RunPROptions{ListTargets: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"Detected dependency targets:",
+		"backend [standalone, ecosystem=go-modules, manager=go]",
+		"root [root, ecosystem=poetry, manager=poetry]",
+	} {
+		if !strings.Contains(stdout, expected) {
+			t.Fatalf("expected target listing to contain %q, got %q", expected, stdout)
+		}
+	}
+}
+
+func TestRunPRPathMatchesManifestPathAndDirectoryForNonJSTarget(t *testing.T) {
+	for _, pathValue := range []string{"backend", "backend/go.mod"} {
+		t.Run(pathValue, func(t *testing.T) {
+			client := newFakeGitHubClient()
+			client.pr = ghclient.PullRequest{
+				Title:       "Update go module",
+				Draft:       false,
+				Number:      123,
+				BaseSHA:     "base-sha",
+				HeadSHA:     "head-sha",
+				URL:         "https://github.com/owner/repo/pull/123",
+				AuthorLogin: "octocat",
+			}
+			client.files = []ghclient.PullRequestFile{{Filename: "backend/go.mod", Status: "modified"}}
+			client.repositoryFilesByRef["base-sha"] = []string{"backend/go.mod"}
+			client.repositoryFilesByRef["head-sha"] = []string{"backend/go.mod"}
+			client.compareChanges = []ghclient.DependencyReviewChange{
+				{Name: "golang.org/x/text", Manifest: "backend/go.mod", Ecosystem: "gomod", ChangeType: "added", Version: "0.16.0"},
+			}
+
+			stdout, _, err := runPRWithClient(t, client, RunPROptions{Format: "human", Paths: []string{pathValue}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(stdout, "golang.org/x/text") {
+				t.Fatalf("expected non-JS target selection to succeed for %q, got %q", pathValue, stdout)
+			}
+		})
+	}
+}
+
+func TestRunPRDependencyReviewUnavailableForNonJSTargetIsActionable(t *testing.T) {
+	client := newFakeGitHubClient()
+	client.pr = ghclient.PullRequest{
+		Title:       "Update go module",
+		Draft:       false,
+		Number:      123,
+		BaseSHA:     "base-sha",
+		HeadSHA:     "head-sha",
+		URL:         "https://github.com/owner/repo/pull/123",
+		AuthorLogin: "octocat",
+	}
+	client.files = []ghclient.PullRequestFile{{Filename: "backend/go.mod", Status: "modified"}}
+	client.repositoryFilesByRef["base-sha"] = []string{"backend/go.mod"}
+	client.repositoryFilesByRef["head-sha"] = []string{"backend/go.mod"}
+	client.compareErr = &api.HTTPError{StatusCode: 404, Message: "dependency review disabled"}
+
+	_, _, err := runPRWithClient(t, client, RunPROptions{Paths: []string{"backend"}})
+	assertExitCode(t, err, 1)
+	for _, expected := range []string{
+		"dependency review is unavailable",
+		"backend/go.mod",
+		"npm/pnpm/yarn",
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("expected actionable non-JS fallback error containing %q, got %v", expected, err)
+		}
+	}
+}
+
+func TestRunPRYarnUnsupportedFallbackErrorIsActionable(t *testing.T) {
+	client := newYarnRootFakeGitHubClient(t)
+	client.compareErr = &api.HTTPError{StatusCode: 404, Message: "dependency review disabled"}
+	client.filesByKey[fileKey("yarn.lock", "base-sha")] = readFixture(t, "yarn.unsupported.lock")
+	client.filesByKey[fileKey("yarn.lock", "head-sha")] = readFixture(t, "yarn.unsupported.lock")
+
+	_, _, err := runPRWithClient(t, client, RunPROptions{})
+	assertExitCode(t, err, 1)
+	for _, expected := range []string{
+		"Yarn Berry",
+		"Plug'n'Play",
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("expected unsupported yarn fallback error containing %q, got %v", expected, err)
+		}
 	}
 }
 
@@ -570,7 +712,7 @@ func TestRunPRDependencyReviewFallbackForSingleTargetMarksAggregate(t *testing.T
 		{Filename: "packages/ui/package.json", Status: "modified"},
 		{Filename: "package-lock.json", Status: "modified"},
 	}
-	client.compareManifestErr["packages/ui/package.json"] = &api.HTTPError{StatusCode: 404, Message: "dependency review disabled"}
+	client.compareErr = &api.HTTPError{StatusCode: 404, Message: "dependency review disabled"}
 
 	stdout, _, err := runPRWithClient(t, client, RunPROptions{Format: "json", Paths: []string{"packages/ui"}})
 	if err != nil {

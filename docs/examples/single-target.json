@@ -14,7 +14,7 @@
   "blast_radius": "medium",
   "dependency_review_available": false,
   "summary": [
-    "1 npm dependency changes were detected.",
+    "1 dependency changes were detected.",
     "Dependency Review was unavailable, so lockfile-only fallback analysis was used.",
     "Top risk signals: major version bump, install script."
   ],

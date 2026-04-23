@@ -86,6 +86,8 @@ Verify:
 
 Verify:
 
-- `--list-targets` exits `0` and prints detected npm or pnpm targets
-- `--path` restricts analysis to the selected target or targets
+- `--list-targets` exits `0` and prints detected targets with clear ecosystem
+  and manager context
+- `--path` restricts analysis to the selected target or targets by exact
+  manifest path or by owning directory when that is unambiguous
 - aggregate and per-target bundle files are written when `--bundle-dir` is set

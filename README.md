@@ -3,8 +3,7 @@
 [![test](https://github.com/rad1092/gh-dep-risk/actions/workflows/test.yml/badge.svg)](https://github.com/rad1092/gh-dep-risk/actions/workflows/test.yml)
 
 `gh-dep-risk` is a precompiled GitHub CLI extension that reviewers run on
-demand to summarize JavaScript dependency risk in pull requests for npm and
-pnpm projects.
+demand to summarize dependency risk in pull requests.
 
 It is an extension instead of a server so it can reuse `gh` authentication,
 stay on the reviewer's machine or in a one-off workflow run, and avoid any
@@ -12,16 +11,31 @@ webhook, queue, database, or dashboard infrastructure.
 
 ## Scope
 
-- npm and pnpm scope
-- supported files:
+- API-first multi-ecosystem dependency review
+- local fallback support matrix:
   - npm: `package.json`, `package-lock.json`
   - pnpm: `package.json`, `pnpm-lock.yaml`
   - pnpm workspace discovery: `pnpm-workspace.yaml`
+  - yarn: `package.json`, `yarn.lock` (narrow Yarn Classic / node_modules fallback only)
 - one Go binary
-- dependency review API first, lockfile-only fallback when dependency review
-  is unavailable
-- no server, webhook receiver, GitHub App, DB, queue, dashboard, yarn, bun,
-  or non-JS ecosystems
+- dependency review API first, local fallback only when dependency review is
+  unavailable
+- no server, webhook receiver, GitHub App, DB, queue, dashboard, bun, or
+  broad non-JS local fallback in this release
+
+Dependency-review path ecosystems in this release:
+
+- Cargo
+- Composer
+- Go modules
+- Maven
+- npm
+- pip
+- pnpm
+- Poetry
+- RubyGems
+- Swift Package Manager
+- Yarn
 
 ## Install
 
@@ -117,7 +131,7 @@ branch.
 - `--fail-level low|medium|high|critical|none`
 - `--no-registry`
 - `--bundle-dir <dir>`
-- `--path <repo-relative-dir-or-package.json>` repeatable
+- `--path <repo-relative-dir-or-manifest>` repeatable
 - `--list-targets`
 
 ### `gh dep-risk version`
@@ -218,7 +232,7 @@ English is the default language. Use `--lang ko` for Korean.
 - `dep-risk.md`
 - `metadata.json`
 
-When multiple JS targets are analyzed, the bundle also includes:
+When multiple targets are analyzed, the bundle also includes:
 
 - `targets/<safe-target-name>/dep-risk.json`
 - `targets/<safe-target-name>/dep-risk.md`
@@ -236,20 +250,25 @@ The score model stays heuristic, deterministic, and intentionally auditable.
 ## Behavior
 
 `gh dep-risk pr` resolves the repository from `GH_REPO` or the current git
-remote, fetches PR metadata, lists changed files, discovers supported npm and
-pnpm targets from the base and head repository trees, and analyzes only the
-changed targets unless `--path` narrows the set explicitly.
+remote, fetches PR metadata, and prefers GitHub dependency-review data when it
+is available. Repository-tree discovery remains in use for local fallback,
+`--list-targets`, and path validation.
 
 Supported target shapes:
 
+- dependency-review targets for Cargo, Composer, Go modules, Maven, npm, pip,
+  pnpm, Poetry, RubyGems, SwiftPM, and Yarn
 - npm root projects with `package.json` and `package-lock.json`
 - npm workspaces with a shared root `package-lock.json`
 - pnpm root projects with `package.json` and `pnpm-lock.yaml`
 - pnpm workspaces with `pnpm-workspace.yaml` and a shared root `pnpm-lock.yaml`
+- Yarn root projects with `package.json` and `yarn.lock`
+- Yarn workspaces discovered from `package.json` workspaces and a shared root
+  `yarn.lock`
 - nested standalone subprojects with their own `package.json` and either
-  `package-lock.json` or `pnpm-lock.yaml`
+  `package-lock.json`, `pnpm-lock.yaml`, or `yarn.lock`
 
-### JS monorepos and workspaces
+### Mixed ecosystems and JS workspaces
 
 Default behavior:
 
@@ -269,29 +288,37 @@ gh dep-risk pr 123 --bundle-dir ./out
 
 Notes:
 
-- `--path` accepts either a directory or a `package.json` path and can be
-  repeated
+- `--path` accepts either an exact manifest path or an owning directory when
+  that directory maps to exactly one detected target, and can be repeated
 - `--list-targets` prints a readable target list, validates any `--path`
   filters, and exits without running PR file analysis or dependency review
 - npm workspaces reuse the shared root `package-lock.json`
 - pnpm workspaces reuse the shared root `pnpm-lock.yaml` and use
   `pnpm-workspace.yaml` package globs for discovery
+- Yarn local fallback supports classic `yarn.lock` installs only
+- likely Yarn Berry / Plug'n'Play lockfiles are detected and reported as an
+  unsupported local-fallback case instead of being analyzed inaccurately
 - if a lockfile-only workspace change cannot be mapped exactly, the report calls
   out that attribution is approximate instead of failing
 - if both `package-lock.json` and `pnpm-lock.yaml` exist for the same target
   directory, `gh-dep-risk` will only auto-pick one when exactly one lockfile is
   clearly changed in the PR; otherwise it returns an ambiguity error and tells
   you to narrow the target or remove the unused lockfile
-- out of scope for now: yarn, bun, `package.json5`, `package.yaml`, pnpm
-  catalogs, and pnpm branch lockfiles
+- if dependency review is unavailable and the selected target belongs to an
+  ecosystem without local fallback support in this release, the command returns
+  a clear actionable error instead of pretending to analyze it
+- out of scope for now: bun, `package.json5`, `package.yaml`, pnpm catalogs,
+  pnpm branch lockfiles, broad non-JS local fallback, and full Yarn Plug'n'Play
+  graph resolution
 
 If dependency review returns `403` or `404`, `gh-dep-risk` falls back to
 lockfile-only analysis and explicitly reports
 `dependency_review_available=false`. Registry publish-age lookups are best
-effort and are skipped with `--no-registry`.
+effort and are skipped with `--no-registry`, but API-provided release-age
+signals remain available when GitHub already supplies them.
 
-If there is no meaningful npm or pnpm manifest or lockfile dependency change,
-the command exits with code `2`.
+If there is no meaningful supported dependency change, the command exits with
+code `2`.
 
 ### Comment upsert rules
 
@@ -336,7 +363,7 @@ only `dev`.
 
 - `0` success
 - `1` general error
-- `2` no supported npm or pnpm dependency change found
+- `2` no supported dependency change found
 - `3` final score meets or exceeds `--fail-level`
 - `4` authentication required or insufficient permissions
 
