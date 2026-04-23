@@ -54,6 +54,8 @@ Then verify:
 - the workflow summary contains the markdown report
 - the uploaded artifact contains the bundle files
 - comment mode behaves correctly if you tested `comment=true`
+- for private cross-repo targets, verify the workflow token can read the target
+  PR repository before relying on comment mode or artifact generation
 
 If GitHub auth or repository context is unavailable, skip this step and perform
 it later from the default branch after pushing.

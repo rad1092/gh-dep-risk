@@ -1,7 +1,8 @@
 # AGENTS
 
-- mission: on-demand npm dependency PR risk summary
-- npm-only scope: support only `package.json` and `package-lock.json`
+- mission: on-demand JavaScript dependency PR risk summary
+- JS package manager scope: support `package.json` with `package-lock.json` or
+  `pnpm-lock.yaml`, plus `pnpm-workspace.yaml` for pnpm workspace discovery
 - keep GitHub I/O in `internal/github`
 - keep orchestration in `internal/app`
 - keep deterministic logic in `internal/analysis` and `internal/npm`

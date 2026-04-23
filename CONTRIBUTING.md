@@ -22,6 +22,12 @@ go build -o gh-dep-risk.exe .
 .\gh-dep-risk.exe version
 ```
 
+The supported JS package manager scope is:
+
+- npm: `package.json`, `package-lock.json`
+- pnpm: `package.json`, `pnpm-lock.yaml`
+- pnpm workspace discovery: `pnpm-workspace.yaml`
+
 Build with explicit metadata:
 
 ```bash

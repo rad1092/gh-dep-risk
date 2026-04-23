@@ -1,16 +1,18 @@
 ---
 name: dep-risk-gh-extension
-description: Maintain the gh-dep-risk precompiled GitHub CLI extension for on-demand npm dependency PR risk summaries. Use when working on this repo's CLI ergonomics, GitHub API behavior, package-lock or package.json parsing, deterministic risk analysis, comment upsert rules, output rendering, release workflows, or npm-only extension guardrails.
+description: Maintain the gh-dep-risk precompiled GitHub CLI extension for on-demand JavaScript dependency PR risk summaries. Use when working on this repo's CLI ergonomics, GitHub API behavior, package-lock, pnpm-lock, package.json, or pnpm-workspace parsing, deterministic risk analysis, comment upsert rules, output rendering, release workflows, or narrow JS package manager guardrails.
 ---
 
 # dep-risk-gh-extension
 
-Use this skill when working on `gh-dep-risk`, the precompiled GitHub CLI extension for on-demand npm dependency PR risk summaries.
+Use this skill when working on `gh-dep-risk`, the precompiled GitHub CLI extension for on-demand JavaScript dependency PR risk summaries.
 
 ## Mission
 
 - keep the product as a single Go binary
-- keep the npm-only scope: `package.json` and `package-lock.json`
+- keep the supported JS package manager scope narrow: npm with
+  `package-lock.json`, and pnpm with `pnpm-lock.yaml` plus
+  `pnpm-workspace.yaml` discovery
 - keep the workflow on-demand through `gh dep-risk pr`
 - never introduce a server, webhook receiver, GitHub App, queue, database, dashboard, or web UI
 

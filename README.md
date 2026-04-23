@@ -413,8 +413,10 @@ If `comment=true`, comment ownership follows the workflow-authenticated identity
 backed by `GITHUB_TOKEN`.
 
 When the workflow is running in a different repository than the target PR,
-`GITHUB_TOKEN` may not be allowed to write cross-repo comments; in that case
-analysis can still run, but comment mode may exit with code `4`.
+`GITHUB_TOKEN` may not be allowed to read the target PR at all, especially for
+private cross-repo targets. In that case the workflow can fail before comment
+upsert. Cross-repo comment mode can also fail when the workflow token lacks
+issue-comment permissions on the target repository.
 
 ### Self-hosted runners
 

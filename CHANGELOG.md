@@ -4,8 +4,18 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 ## Unreleased
 
-- Added an MIT `LICENSE` file and aligned contributor-facing docs with the
-  repository's open source license.
+## v0.1.6
+
+- Added repo-local `.gh-dep-risk.yml` config support for `gh dep-risk pr` with
+  explicit CLI-over-config precedence and repeatable `path` handling.
+- Improved reviewer-facing human and markdown output with clearer `Why risky`
+  summaries and more operational recommended actions.
+- Added pnpm support for root projects, shared-lockfile workspaces, and nested
+  standalone targets while preserving the stable JSON schema and existing exit
+  code behavior.
+- Clarified actual workflow behavior for cross-repo private targets: a manual
+  workflow run can fail before comment upsert if `GITHUB_TOKEN` cannot read the
+  target PR repository.
 
 ## v0.1.4
 

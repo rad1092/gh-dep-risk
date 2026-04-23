@@ -34,6 +34,9 @@ Verify:
 - the artifact includes `dep-risk-human.txt`, `dep-risk.json`, `dep-risk.md`,
   `metadata.json`
 - if multiple targets changed, the artifact also includes `targets/...`
+- for private cross-repo targets, verify the workflow token can read the target
+  PR repository; otherwise the run can fail before comment upsert or artifact
+  upload
 
 ## 3. Remote install smoke
 
@@ -83,6 +86,6 @@ Verify:
 
 Verify:
 
-- `--list-targets` exits `0` and prints detected npm targets
+- `--list-targets` exits `0` and prints detected npm or pnpm targets
 - `--path` restricts analysis to the selected target or targets
 - aggregate and per-target bundle files are written when `--bundle-dir` is set
