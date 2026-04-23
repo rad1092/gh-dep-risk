@@ -211,11 +211,11 @@ func ParseRiskLevel(value string) (RiskLevel, error) {
 func (l RiskLevel) Threshold() int {
 	switch l {
 	case RiskLevelCritical:
-		return 70
+		return levelThresholdCritical
 	case RiskLevelHigh:
-		return 40
+		return levelThresholdHigh
 	case RiskLevelMedium:
-		return 20
+		return levelThresholdMedium
 	case RiskLevelLow:
 		return 0
 	default:
@@ -225,11 +225,11 @@ func (l RiskLevel) Threshold() int {
 
 func LevelForScore(score int) RiskLevel {
 	switch {
-	case score >= 70:
+	case score >= levelThresholdCritical:
 		return RiskLevelCritical
-	case score >= 40:
+	case score >= levelThresholdHigh:
 		return RiskLevelHigh
-	case score >= 20:
+	case score >= levelThresholdMedium:
 		return RiskLevelMedium
 	default:
 		return RiskLevelLow

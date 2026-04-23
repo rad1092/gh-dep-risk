@@ -57,51 +57,7 @@ func Analyze(input Input, publishedAt map[PackageVersion]time.Time) AnalysisResu
 			AddedTransitiveCount: views.AddedTransitive,
 		}
 
-		score := 0
-		drivers := make([]string, 0)
-		if len(candidate.Vulnerabilities) > 0 {
-			score += 35
-			drivers = append(drivers, DriverKnownVulnerabilities)
-		}
-		if candidate.ChangeType == ChangeAdded && candidate.Direct {
-			switch candidate.Scope {
-			case ScopeRuntime, ScopeOptional:
-				score += 12
-				drivers = append(drivers, DriverAddedDirectRuntime)
-			case ScopeDev:
-				score += 6
-				drivers = append(drivers, DriverAddedDirectDev)
-			}
-		}
-		if isMajorBump(candidate.FromVersion, candidate.ToVersion, candidate.FromRequirement, candidate.ToRequirement) {
-			score += 10
-			drivers = append(drivers, DriverMajorVersionBump)
-		}
-		if published, ok := publishedAt[PackageVersion{Name: candidate.Name, Version: candidate.ToVersion}]; ok && !published.IsZero() {
-			if input.Now.Sub(published) <= 7*24*time.Hour {
-				score += 18
-				drivers = append(drivers, DriverRecentlyPublished)
-			}
-		}
-		if candidate.HeadPackage.HasInstallScript {
-			score += 20
-			drivers = append(drivers, DriverInstallScript)
-		}
-		if len(candidate.HeadPackage.OS) > 0 || len(candidate.HeadPackage.CPU) > 0 {
-			score += 6
-			drivers = append(drivers, DriverPlatformRestricted)
-		}
-		if views.AddedTransitive >= 5 {
-			score += 12
-			drivers = append(drivers, DriverTransitiveFive)
-		}
-		if views.AddedTransitive >= 15 {
-			score += 8
-			drivers = append(drivers, DriverTransitiveFifteen)
-		}
-		if score > 100 {
-			score = 100
-		}
+		score, drivers := scoreChange(input, candidate, views, publishedAt)
 
 		change.Score = score
 		change.Level = LevelForScore(score)
@@ -526,43 +482,6 @@ func isMajorBump(fromVersion, toVersion, fromRequirement, toRequirement string) 
 	fromMajor, fromOK := npm.MajorVersion(left)
 	toMajor, toOK := npm.MajorVersion(right)
 	return fromOK && toOK && toMajor > fromMajor
-}
-
-func aggregateScore(changes []DependencyChange) int {
-	if len(changes) == 0 {
-		return 0
-	}
-	scores := make([]int, 0, len(changes))
-	for _, change := range changes {
-		scores = append(scores, change.Score)
-	}
-	return aggregateTargetScore(scores)
-}
-
-func aggregateTargetScore(scores []int) int {
-	if len(scores) == 0 {
-		return 0
-	}
-	sorted := append([]int(nil), scores...)
-	sort.Sort(sort.Reverse(sort.IntSlice(sorted)))
-	maxScore := sorted[0]
-	bonus := 0
-	for _, score := range sorted[1:] {
-		if score >= 20 {
-			bonus += 4
-		} else if score > 0 {
-			bonus++
-		}
-		if bonus >= 15 {
-			bonus = 15
-			break
-		}
-	}
-	total := maxScore + bonus
-	if total > 100 {
-		return 100
-	}
-	return total
 }
 
 func deriveBlastRadius(changes []DependencyChange, addedTransitiveCount int) BlastRadius {

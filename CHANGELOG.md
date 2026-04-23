@@ -4,6 +4,14 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 ## Unreleased
 
+- Hardened deterministic internal proof with broader target-shape and
+  dependency-review-path test matrices for npm and pnpm.
+- Centralized scoring weights, thresholds, and aggregate bonus rules so the
+  model is easier to audit without changing the JSON schema or exit codes.
+- Split shared JS lock-graph traversal from lockfile parsing details to reduce
+  manager-neutral abstraction debt while preserving current npm and pnpm
+  behavior.
+
 ## v0.1.6
 
 - Added repo-local `.gh-dep-risk.yml` config support for `gh dep-risk pr` with

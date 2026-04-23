@@ -163,7 +163,8 @@ file path. A missing config file is ignored.
 ## What It Looks Like
 
 These examples are checked in under [docs/examples](docs/examples) and are
-derived from deterministic fixtures and render tests.
+derived from deterministic fixtures, render tests, and fixture-backed app
+tests.
 
 ### Human output
 
@@ -221,6 +222,16 @@ When multiple JS targets are analyzed, the bundle also includes:
 
 - `targets/<safe-target-name>/dep-risk.json`
 - `targets/<safe-target-name>/dep-risk.md`
+
+## Scoring Model
+
+The score model stays heuristic, deterministic, and intentionally auditable.
+
+- each dependency change is scored from named risk drivers with fixed weights
+- the overall PR score is the highest single-change score plus a small capped
+  bonus for additional risky changes
+- this keeps the main driver explainable while still reflecting multi-target
+  or multi-change PRs without turning the score into an opaque sum
 
 ## Behavior
 
