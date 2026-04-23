@@ -10,10 +10,12 @@ git status --short --branch
 
 The tree should be clean before cutting a release tag.
 
-## 2. Run tests
+## 2. Run local verification
 
 ```bash
 go test ./...
+go build ./...
+git diff --check
 ```
 
 ## 3. Build a release-quality binary locally
@@ -40,7 +42,11 @@ go build -ldflags "-s -w -X gh-dep-risk/cmd.version=$version -X gh-dep-risk/cmd.
 .\gh-dep-risk.exe version --json
 ```
 
-## 4. Optional manual workflow smoke test
+## 4. Run live CLI checks and optional manual workflow smoke test
+
+Before tagging, run the local binary against real pull requests if you have
+GitHub auth available. Prefer at least one smaller PR and one larger PR so the
+final release is not validated only against fixtures.
 
 If you have GitHub auth and repository access available, run:
 

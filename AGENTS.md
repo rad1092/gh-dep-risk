@@ -2,7 +2,9 @@
 
 - mission: on-demand JavaScript dependency PR risk summary
 - JS package manager scope: support `package.json` with `package-lock.json` or
-  `pnpm-lock.yaml`, plus `pnpm-workspace.yaml` for pnpm workspace discovery
+  `pnpm-lock.yaml`, plus `pnpm-workspace.yaml` for pnpm workspace discovery,
+  and support classic `yarn.lock` fallback for root, workspace, and nested
+  standalone Yarn targets
 - keep GitHub I/O in `internal/github`
 - keep orchestration in `internal/app`
 - keep deterministic logic in `internal/analysis` and `internal/npm`

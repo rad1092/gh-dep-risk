@@ -145,6 +145,7 @@ func parseNPMLockfile(data []byte) (*Lockfile, error) {
 				OS:               append([]string(nil), entry.OS...),
 				CPU:              append([]string(nil), entry.CPU...),
 				Dependencies:     cloneMap(entry.Dependencies),
+				WorkspaceLocal:   isLocalPackageReference(entry.Resolved),
 			}
 		}
 		return lockfile, nil
@@ -290,6 +291,7 @@ func parseYarnLockfile(data []byte) (*Lockfile, error) {
 		if entry.Version == "" {
 			continue
 		}
+		entry.WorkspaceLocal = isLocalPackageReference(entry.Resolved)
 		key := entry.Name + "@" + entry.Version
 		if existingPath, ok := seen[key]; ok {
 			existing := lockfile.Packages[existingPath]
@@ -302,6 +304,7 @@ func parseYarnLockfile(data []byte) (*Lockfile, error) {
 			if existing.Integrity == "" {
 				existing.Integrity = entry.Integrity
 			}
+			existing.WorkspaceLocal = existing.WorkspaceLocal || entry.WorkspaceLocal
 			lockfile.Packages[existingPath] = existing
 			continue
 		}
@@ -350,6 +353,7 @@ func flattenLegacyDependencies(target map[string]LockPackage, parent string, dep
 			OS:               append([]string(nil), dep.OS...),
 			CPU:              append([]string(nil), dep.CPU...),
 			Dependencies:     cloneMap(dep.Requires),
+			WorkspaceLocal:   isLocalPackageReference(dep.Resolved),
 		}
 		flattenLegacyDependencies(target, path, dep.Dependencies)
 	}
@@ -676,6 +680,24 @@ func coalesceVersion(values ...string) string {
 func isPNPMWorkspaceLink(version string) bool {
 	lower := strings.ToLower(strings.TrimSpace(version))
 	return strings.HasPrefix(lower, "link:") || strings.HasPrefix(lower, "workspace:")
+}
+
+func isLocalPackageReference(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	switch {
+	case strings.HasPrefix(lower, "file:"):
+		return true
+	case strings.HasPrefix(lower, "link:"):
+		return true
+	case strings.HasPrefix(lower, "workspace:"):
+		return true
+	case strings.HasPrefix(lower, "portal:"):
+		return true
+	case lower == "workspace-local":
+		return true
+	default:
+		return false
+	}
 }
 
 func pnpmResolved(tarball, repo, resolutionType string) string {

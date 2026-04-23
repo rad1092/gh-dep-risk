@@ -148,6 +148,9 @@ func (l *Lockfile) CollectTargetPackages(targetDir string, directNames []string)
 			continue
 		}
 		result.All[pkg.Path] = pkg
+		if pkg.WorkspaceLocal {
+			continue
+		}
 		queue = append(queue, pkg)
 	}
 
@@ -166,6 +169,9 @@ func (l *Lockfile) CollectTargetPackages(targetDir string, directNames []string)
 				continue
 			}
 			result.All[dep.Path] = dep
+			if dep.WorkspaceLocal {
+				continue
+			}
 			queue = append(queue, dep)
 		}
 	}
