@@ -3,6 +3,7 @@ package github
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"reflect"
 	"strings"
@@ -186,6 +187,32 @@ func TestClassifyAuthErrorWrapsHTTP401AsAuthError(t *testing.T) {
 	}
 	if !IsAuthError(err) {
 		t.Fatalf("expected AuthError, got %T", err)
+	}
+}
+
+func TestDecodeRepositoryContentSupportsLargeBlobFallback(t *testing.T) {
+	want := []byte("hello from blob fallback")
+	content, err := decodeRepositoryContent("yarn.lock", "", "none", "blob-sha", func(sha string) (string, string, error) {
+		if sha != "blob-sha" {
+			t.Fatalf("unexpected blob sha %q", sha)
+		}
+		return base64.StdEncoding.EncodeToString(want), "base64", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(content, want) {
+		t.Fatalf("unexpected decoded content: got %q want %q", string(content), string(want))
+	}
+}
+
+func TestDecodeRepositoryContentRejectsUnsupportedEncodingWithoutBlobSHA(t *testing.T) {
+	_, err := decodeRepositoryContent("pnpm-lock.yaml", "", "none", "", nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `unsupported content encoding "none"`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

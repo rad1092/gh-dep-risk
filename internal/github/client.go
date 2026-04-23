@@ -355,6 +355,7 @@ func (c *APIClient) GetRepositoryFile(ctx context.Context, repo Repo, path, ref 
 	var resp struct {
 		Content  string `json:"content"`
 		Encoding string `json:"encoding"`
+		SHA      string `json:"sha"`
 	}
 
 	contentPath := fmt.Sprintf("repos/%s/%s/contents/%s?ref=%s", repo.Owner, repo.Name, escapeContentPath(path), url.QueryEscape(ref))
@@ -364,14 +365,20 @@ func (c *APIClient) GetRepositoryFile(ctx context.Context, repo Repo, path, ref 
 		}
 		return nil, classifyAuthError(err)
 	}
-	if resp.Encoding != "base64" {
-		return nil, fmt.Errorf("unsupported content encoding %q for %s", resp.Encoding, path)
-	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(resp.Content, "\n", ""))
-	if err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
-	}
-	return decoded, nil
+	return decodeRepositoryContent(path, resp.Content, resp.Encoding, resp.SHA, func(sha string) (string, string, error) {
+		var blob struct {
+			Content  string `json:"content"`
+			Encoding string `json:"encoding"`
+		}
+		blobPath := fmt.Sprintf("repos/%s/%s/git/blobs/%s", repo.Owner, repo.Name, url.PathEscape(sha))
+		if err := client.DoWithContext(ctx, "GET", blobPath, nil, &blob); err != nil {
+			if IsHTTPStatus(err, 404) {
+				return "", "", ErrNotFound
+			}
+			return "", "", classifyAuthError(err)
+		}
+		return blob.Content, blob.Encoding, nil
+	})
 }
 
 func (c *APIClient) ListIssueComments(ctx context.Context, repo Repo, issueNumber int) ([]IssueComment, error) {
@@ -594,6 +601,38 @@ func escapeContentPath(path string) string {
 		parts[i] = url.PathEscape(part)
 	}
 	return strings.Join(parts, "/")
+}
+
+func decodeRepositoryContent(path, content, encoding, sha string, fetchBlob func(sha string) (string, string, error)) ([]byte, error) {
+	switch encoding {
+	case "base64":
+		return decodeBase64RepositoryContent(path, content)
+	case "none":
+		if strings.TrimSpace(sha) == "" {
+			return nil, fmt.Errorf("unsupported content encoding %q for %s", encoding, path)
+		}
+		if fetchBlob == nil {
+			return nil, fmt.Errorf("unsupported content encoding %q for %s", encoding, path)
+		}
+		blobContent, blobEncoding, err := fetchBlob(sha)
+		if err != nil {
+			return nil, err
+		}
+		if blobEncoding != "base64" {
+			return nil, fmt.Errorf("unsupported blob encoding %q for %s", blobEncoding, path)
+		}
+		return decodeBase64RepositoryContent(path, blobContent)
+	default:
+		return nil, fmt.Errorf("unsupported content encoding %q for %s", encoding, path)
+	}
+}
+
+func decodeBase64RepositoryContent(path, content string) ([]byte, error) {
+	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(content, "\n", ""))
+	if err != nil {
+		return nil, fmt.Errorf("decode %s: %w", path, err)
+	}
+	return decoded, nil
 }
 
 type AuthError struct {

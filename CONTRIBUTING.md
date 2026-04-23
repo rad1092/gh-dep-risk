@@ -22,11 +22,12 @@ go build -o gh-dep-risk.exe .
 .\gh-dep-risk.exe version
 ```
 
-The supported JS package manager scope is:
+The supported local JS fallback scope is:
 
 - npm: `package.json`, `package-lock.json`
 - pnpm: `package.json`, `pnpm-lock.yaml`
 - pnpm workspace discovery: `pnpm-workspace.yaml`
+- yarn: `package.json`, `yarn.lock` (Yarn Classic only)
 
 Build with explicit metadata:
 

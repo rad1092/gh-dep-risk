@@ -11,7 +11,7 @@ webhook, queue, database, or dashboard infrastructure.
 
 ## Scope
 
-- API-first multi-ecosystem dependency review
+- on-demand pull request dependency review through GitHub Dependency Review
 - local fallback support matrix:
   - npm: `package.json`, `package-lock.json`
   - pnpm: `package.json`, `pnpm-lock.yaml`
@@ -23,7 +23,8 @@ webhook, queue, database, or dashboard infrastructure.
 - no server, webhook receiver, GitHub App, DB, queue, dashboard, bun, or
   broad non-JS local fallback in this release
 
-Dependency-review path ecosystems in this release:
+Dependency Review ecosystems surfaced in this release when GitHub provides
+them:
 
 - Cargo
 - Composer
@@ -298,6 +299,8 @@ Notes:
 - Yarn local fallback supports classic `yarn.lock` installs only
 - likely Yarn Berry / Plug'n'Play lockfiles are detected and reported as an
   unsupported local-fallback case instead of being analyzed inaccurately
+- large lockfiles served by the GitHub contents API without inline content are
+  still fetched through the corresponding blob object instead of failing early
 - if a lockfile-only workspace change cannot be mapped exactly, the report calls
   out that attribution is approximate instead of failing
 - if both `package-lock.json` and `pnpm-lock.yaml` exist for the same target

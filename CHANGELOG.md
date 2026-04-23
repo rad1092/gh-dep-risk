@@ -4,6 +4,15 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 ## Unreleased
 
+- Fixed local fallback against large repository lockfiles fetched from the
+  GitHub contents API by following blob-backed `encoding: none` responses for
+  files such as large `yarn.lock` and `pnpm-lock.yaml`.
+- Marked local npm and Yarn file/workspace packages consistently during local
+  fallback so local targets are not treated like registry packages for target
+  traversal or publish-age lookups.
+- Tightened the public scope wording to distinguish GitHub dependency-review
+  ecosystem coverage from the narrower local fallback support matrix.
+
 ## v0.1.7
 
 - Expanded the dependency-review path to surface mixed-ecosystem pull requests

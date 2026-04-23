@@ -141,11 +141,21 @@ func TestCollectTargetPackagesForWorkspaceUsesSharedRootLockfile(t *testing.T) {
 	}
 
 	view := lockfile.CollectTargetPackages("apps/web", []string{"@acme/ui", "axios", "react"})
+	ui, ok := view.Direct["@acme/ui"]
+	if !ok {
+		t.Fatalf("expected @acme/ui to resolve as a direct workspace dependency")
+	}
+	if !ui.WorkspaceLocal {
+		t.Fatalf("expected @acme/ui to be marked workspace-local")
+	}
 	if _, ok := view.Direct["axios"]; !ok {
 		t.Fatalf("expected axios to resolve as a direct workspace dependency")
 	}
 	if _, ok := view.Transitive["node_modules/form-data"]; !ok {
 		t.Fatalf("expected shared root transitive dependency to be included")
+	}
+	if _, ok := view.Transitive["node_modules/clsx"]; ok {
+		t.Fatalf("did not expect local workspace package dependencies to be attributed as external transitive packages")
 	}
 	if view.Approximate {
 		t.Fatalf("expected exact workspace attribution for shared root lockfile fixture")
@@ -265,6 +275,36 @@ func TestParseYarnClassicLockfileCollectsStandalonePackages(t *testing.T) {
 	view := lockfile.CollectTargetPackages("services/api", []string{"lodash"})
 	if _, ok := view.Direct["lodash"]; !ok {
 		t.Fatalf("expected lodash to resolve as a direct standalone yarn dependency")
+	}
+}
+
+func TestParseYarnClassicLockfileMarksLocalFileReferences(t *testing.T) {
+	data := []byte(`# yarn lockfile v1
+
+local-lib@file:../local-lib:
+  version "1.0.0"
+  resolved "file:../local-lib"
+
+left-pad@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/left-pad/-/left-pad-1.0.0.tgz"
+`)
+
+	lockfile, err := ParseLockfile(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	view := lockfile.CollectTargetPackages("", []string{"local-lib", "left-pad"})
+	localLib, ok := view.Direct["local-lib"]
+	if !ok {
+		t.Fatalf("expected local-lib to resolve as a direct yarn dependency")
+	}
+	if !localLib.WorkspaceLocal {
+		t.Fatalf("expected local-lib to be marked workspace-local")
+	}
+	if len(view.Transitive) != 0 {
+		t.Fatalf("did not expect transitive traversal through local file dependency, got %#v", view.Transitive)
 	}
 }
 

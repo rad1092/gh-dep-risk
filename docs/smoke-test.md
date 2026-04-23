@@ -20,6 +20,10 @@ Verify:
 
 - the command exits `0`, `2`, `3`, or `4` as documented
 - the report includes repo, PR, score, blast radius, and recommended actions
+- before release, run at least one smaller PR and one larger PR instead of
+  relying only on fixture-backed tests
+- if the target repository has a very large lockfile, verify the run does not
+  fail on a GitHub contents API `encoding: none` response
 
 ## 2. Workflow dispatch run
 
