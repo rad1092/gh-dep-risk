@@ -1,6 +1,7 @@
 # gh-dep-risk
 
 [![test](https://github.com/rad1092/gh-dep-risk/actions/workflows/test.yml/badge.svg)](https://github.com/rad1092/gh-dep-risk/actions/workflows/test.yml)
+[![install-smoke](https://github.com/rad1092/gh-dep-risk/actions/workflows/install-smoke.yml/badge.svg)](https://github.com/rad1092/gh-dep-risk/actions/workflows/install-smoke.yml)
 
 `gh-dep-risk` is a precompiled GitHub CLI extension that reviewers run on
 demand to summarize dependency risk in pull requests.
@@ -8,6 +9,12 @@ demand to summarize dependency risk in pull requests.
 It is an extension instead of a server so it can reuse `gh` authentication,
 stay on the reviewer's machine or in a one-off workflow run, and avoid any
 webhook, queue, database, or dashboard infrastructure.
+
+![gh-dep-risk animated terminal demo](docs/assets/demo.gif)
+
+The animated terminal capture above comes from a live E2E PR using Yarn local
+fallback. An asciinema-compatible recording is also checked in at
+[docs/assets/demo.cast](docs/assets/demo.cast).
 
 ## Scope
 
@@ -247,6 +254,16 @@ The score model stays heuristic, deterministic, and intentionally auditable.
   bonus for additional risky changes
 - this keeps the main driver explainable while still reflecting multi-target
   or multi-change PRs without turning the score into an opaque sum
+
+## Fallback Matrix
+
+| Ecosystem / manager | With GitHub Dependency Review | Without GitHub Dependency Review |
+| --- | --- | --- |
+| npm | Dependency Review data is used when available. | Local fallback analyzes `package.json` and `package-lock.json`. |
+| pnpm | Dependency Review data is used when available. | Local fallback analyzes `package.json`, `pnpm-lock.yaml`, and `pnpm-workspace.yaml` discovery. |
+| Yarn Classic | Dependency Review data is used when available. | Local fallback analyzes `package.json` and classic `yarn.lock`. |
+| Yarn Berry / PnP | Dependency Review data may be surfaced when GitHub provides it. | Local fallback fails honestly when the lockfile cannot be analyzed faithfully. |
+| Cargo, Composer, Go modules, Maven, pip, Poetry, RubyGems, SwiftPM | Dependency Review data may be surfaced when GitHub provides it. | No local fallback in this release. |
 
 ## Behavior
 
