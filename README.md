@@ -4,12 +4,13 @@
 [![install-smoke](https://github.com/rad1092/gh-dependency-risk/actions/workflows/install-smoke.yml/badge.svg)](https://github.com/rad1092/gh-dependency-risk/actions/workflows/install-smoke.yml)
 
 ```text
-       _               _            _      _
-  __ _| |__         __| | ___ _ __ | | __ (_)___| | __
- / _` | '_ \ _____ / _` |/ _ \ '_ \| |/ / | / __| |/ /
-| (_| | | | |_____| (_| |  __/ |_) |   <  | \__ \   <
- \__, |_| |_|      \__,_|\___| .__/|_|\_\ |_|___/_|\_\
- |___/                       |_|
+██████╗ ███████╗██████╗ ██████╗ ██╗███████╗██╗  ██╗
+██╔══██╗██╔════╝██╔══██╗██╔══██╗██║██╔════╝██║ ██╔╝
+██║  ██║█████╗  ██████╔╝██████╔╝██║███████╗█████╔╝ 
+██║  ██║██╔══╝  ██╔═══╝ ██╔══██╗██║╚════██║██╔═██╗ 
+██████╔╝███████╗██║     ██║  ██║██║███████║██║  ██╗
+╚═════╝ ╚══════╝╚═╝     ╚═╝  ╚═╝╚═╝╚══════╝╚═╝  ╚═╝
+        dependency risk summaries for pull requests
 ```
 
 `gh-dep-risk` is a precompiled GitHub CLI extension for on-demand pull request
