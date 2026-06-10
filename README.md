@@ -170,10 +170,6 @@ go build -o gh-dep-risk.exe .
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local development and
 [RELEASING.md](RELEASING.md) for release steps.
 
-## Contributors
-
-- rad1092
-- Codex, AI contributor for implementation, docs, and release validation
 
 ## License
 
