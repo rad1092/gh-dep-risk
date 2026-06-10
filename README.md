@@ -78,6 +78,11 @@ gh dep-risk version --json
 If the PR argument is omitted, `gh dep-risk pr` resolves the PR for the current
 branch. Use `GH_REPO=OWNER/REPO` outside a git checkout.
 
+`--fail-level` exits non-zero (code `3`) when the risk score meets the named
+threshold: `medium` at 20, `high` at 40, `critical` at 70. `low` has a threshold
+of 0, so it fails on any analyzed dependency change; use `none` (the default) to
+never fail. See [docs/behavior.md](docs/behavior.md) for exit codes.
+
 ## Supported Analysis
 
 Dependency Review API data is always preferred. Local fallback runs only when

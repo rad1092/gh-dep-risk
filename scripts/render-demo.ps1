@@ -77,25 +77,27 @@ function Add-FrameState {
     }
 }
 
+# Prompt is what a user actually types (gh extension form); execution uses the
+# local $Binary so the demo renders from real CLI runs against owned fixtures.
 $commands = @(
     @{
-        Display = "$Binary pr 2 --repo rad1092/gh-dep-risk-smoke-matrix --path yarn-app --lang en --format human --no-registry"
-        Args = @("pr", "2", "--repo", "rad1092/gh-dep-risk-smoke-matrix", "--path", "yarn-app", "--lang", "en", "--format", "human", "--no-registry")
+        Prompt = "gh dep-risk pr 2 --repo rad1092/gh-dep-risk-smoke-matrix --path yarn-app"
+        Args = @("pr", "2", "--repo", "rad1092/gh-dep-risk-smoke-matrix", "--path", "yarn-app", "--no-registry")
         Expected = @(0)
     },
     @{
-        Display = "$Binary pr 9 --repo rad1092/gh-dep-risk-smoke-matrix --lang en --format human --no-registry"
-        Args = @("pr", "9", "--repo", "rad1092/gh-dep-risk-smoke-matrix", "--lang", "en", "--format", "human", "--no-registry")
+        Prompt = "gh dep-risk pr 9 --repo rad1092/gh-dep-risk-smoke-matrix"
+        Args = @("pr", "9", "--repo", "rad1092/gh-dep-risk-smoke-matrix", "--no-registry")
         Expected = @(0)
     },
     @{
-        Display = "$Binary pr 10 --repo rad1092/gh-dep-risk-smoke-matrix --lang en --format human --no-registry"
-        Args = @("pr", "10", "--repo", "rad1092/gh-dep-risk-smoke-matrix", "--lang", "en", "--format", "human", "--no-registry")
+        Prompt = "gh dep-risk pr 10 --repo rad1092/gh-dep-risk-smoke-matrix"
+        Args = @("pr", "10", "--repo", "rad1092/gh-dep-risk-smoke-matrix", "--no-registry")
         Expected = @(0)
     },
     @{
-        Display = "$Binary pr 11 --repo rad1092/gh-dep-risk-smoke-matrix --lang en --format human --no-registry"
-        Args = @("pr", "11", "--repo", "rad1092/gh-dep-risk-smoke-matrix", "--lang", "en", "--format", "human", "--no-registry")
+        Prompt = "gh dep-risk pr 11 --repo rad1092/gh-dep-risk-smoke-matrix"
+        Args = @("pr", "11", "--repo", "rad1092/gh-dep-risk-smoke-matrix", "--no-registry")
         Expected = @(2)
     }
 )
@@ -112,7 +114,7 @@ $visibleLines = New-Object 'System.Collections.Generic.List[object]'
 $time = 0.0
 
 foreach ($command in $commands) {
-    $prompt = "$ " + $command.Display
+    $prompt = "$ " + $command.Prompt
     $visibleLines.Add([pscustomobject]@{ Text = $prompt; Kind = "prompt" })
     Add-CastEvent $castEvents $time ($prompt + "`r`n")
     Add-FrameState $frameStates $visibleLines 4
@@ -187,8 +189,8 @@ try {
         $panelBrush = New-Object System.Drawing.SolidBrush($panel)
         $borderPen = New-Object System.Drawing.Pen($border, 1)
 
-        $graphics.DrawString("gh-dep-risk", $titleFont, $titleBrush, 36, 24)
-        $graphics.DrawString("live dependency PR checks across Yarn, Bun, and unsupported fallback behavior", $metaFont, $mutedBrush, 176, 33)
+        $graphics.DrawString("DEPRISK", $titleFont, $titleBrush, 36, 24)
+        $graphics.DrawString("dependency risk summaries for pull requests", $metaFont, $mutedBrush, 150, 33)
         $graphics.FillRectangle($panelBrush, $terminalX, $terminalY, $terminalWidth, $terminalHeight)
         $graphics.DrawRectangle($borderPen, $terminalX, $terminalY, $terminalWidth, $terminalHeight)
 

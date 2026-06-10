@@ -311,7 +311,7 @@ func checksumDetail(baseSum, headSum SumFile, lockfilePath string) string {
 	if added == 0 && removed == 0 {
 		return ""
 	}
-	return fmt.Sprintf("%s checksum evidence changed: added=%d removed=%d", lockfilePath, added, removed)
+	return fmt.Sprintf("%s (added=%d, removed=%d)", lockfilePath, added, removed)
 }
 
 func displayValue(value string) string {

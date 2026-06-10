@@ -96,7 +96,7 @@ func TestRenderGoFallbackNotesAreReadable(t *testing.T) {
 		{Code: analysis.NoteGoReplaceDirective, Dependency: "example.com/lib", Detail: "replace added: example.com/lib => ../lib"},
 		{Code: analysis.NoteGoLocalReplace, Dependency: "example.com/lib", Detail: "example.com/lib => ../lib"},
 		{Code: analysis.NoteGoPseudoVersion, Dependency: "example.com/pseudo", Detail: "v0.0.0-20240101120000-abcdefabcdef"},
-		{Code: analysis.NoteGoChecksumChanged, Detail: "go.sum checksum evidence changed: added=1 removed=0"},
+		{Code: analysis.NoteGoChecksumChanged, Detail: "go.sum (added=1, removed=0)"},
 		{Code: analysis.NoteGoDirectiveChanged, Detail: "go 1.22 -> 1.23"},
 		{Code: analysis.NoteGoToolchainChanged, Detail: "toolchain go1.22.0 -> go1.23.1"},
 	}

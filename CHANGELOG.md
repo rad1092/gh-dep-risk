@@ -4,6 +4,15 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 ## Unreleased
 
+- Removed a duplicated label in the Go checksum note so it now reads
+  `Go checksum evidence changed: go.sum (added=N, removed=M)` instead of
+  repeating "checksum evidence changed".
+- Documented `--fail-level` thresholds in the README, including that `low`
+  has a threshold of 0 and fails on any analyzed dependency change.
+- Redrew the README banner and refreshed the demo recording: the demo now
+  shows the user-facing `gh dep-risk` command form instead of the raw build
+  artifact path.
+
 ## v0.2.1 - 2026-06-10
 
 - Fixed a Yarn Classic local fallback panic when a package target exists only
