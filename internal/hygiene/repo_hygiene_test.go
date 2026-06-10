@@ -38,7 +38,10 @@ func TestInstallSmokeKeepsStableCommandName(t *testing.T) {
 	for _, want := range []string{
 		"gh extension install rad1092/gh-dep-risk --force",
 		"gh dep-risk version",
-		"gh dep-risk pr 1 --repo rad1092/ascii-diagram-editor",
+		"for pr in 3 1 2 4 5 6 7 8 9 10; do",
+		"gh dep-risk pr \"$pr\" --repo rad1092/gh-dep-risk-smoke-matrix",
+		"gh dep-risk pr 11 --repo rad1092/gh-dep-risk-smoke-matrix",
+		"expected unsupported bun.lockb fixture to exit 2",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("install-smoke.yml missing %q", want)

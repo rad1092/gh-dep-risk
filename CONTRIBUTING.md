@@ -22,12 +22,9 @@ go build -o gh-dep-risk.exe .
 .\gh-dep-risk.exe version
 ```
 
-The supported local JS fallback scope is:
-
-- npm: `package.json`, `package-lock.json`
-- pnpm: `package.json`, `pnpm-lock.yaml`
-- pnpm workspace discovery: `pnpm-workspace.yaml`
-- yarn: `package.json`, `yarn.lock` (Yarn Classic only)
+The supported local fallback scope is documented in
+[docs/support-matrix.md](docs/support-matrix.md). Keep new parser behavior
+inside that matrix unless a release intentionally expands the support boundary.
 
 Build with explicit metadata:
 
@@ -61,9 +58,16 @@ Do not assume this is part of automated tests or normal unit-test flows.
 If behavior changes, update:
 
 - `README.md`
+- `docs/support-matrix.md`
+- `docs/behavior.md`
 - `docs/examples/`
 - `docs/smoke-test.md`
 - `CHANGELOG.md` when appropriate
+
+## Contributor credit
+
+Keep public credit concise and factual. The current README credits `rad1092`
+and `Codex` for AI-assisted implementation, docs, and release validation.
 
 ## License
 

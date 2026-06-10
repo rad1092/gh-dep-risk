@@ -113,6 +113,14 @@ func TestRunPRTargetShapeMatrix(t *testing.T) {
 			wantReview:        true,
 		},
 		{
+			name:              "added yarn standalone fallback",
+			client:            newAddedYarnStandaloneFakeGitHubClient,
+			opts:              RunPROptions{Format: "json", Paths: []string{"services/api"}},
+			wantTargets:       []string{"services/api"},
+			wantQuickCommands: []string{"cd services/api && yarn list --depth=9999", "cd services/api && yarn why lodash"},
+			wantReview:        false,
+		},
+		{
 			name:              "mixed npm pnpm and yarn repo",
 			client:            newMixedJSPackageManagerFakeGitHubClient,
 			opts:              RunPROptions{Format: "json"},
@@ -352,6 +360,22 @@ func newYarnStandaloneFakeGitHubClient(t *testing.T) *fakeGitHubClient {
 		{Name: "lodash", Manifest: "services/api/package.json", Ecosystem: "yarn", ChangeType: "removed", Version: "4.17.20"},
 		{Name: "lodash", Manifest: "services/api/package.json", Ecosystem: "yarn", ChangeType: "added", Version: "4.17.21"},
 	}
+	return client
+}
+
+func newAddedYarnStandaloneFakeGitHubClient(t *testing.T) *fakeGitHubClient {
+	t.Helper()
+	client := newYarnStandaloneFakeGitHubClient(t)
+	client.files = []ghclient.PullRequestFile{
+		{Filename: "services/api/package.json", Status: "added"},
+		{Filename: "services/api/yarn.lock", Status: "added"},
+	}
+	client.repositoryFilesByRef["base-sha"] = nil
+	client.repositoryFilesByRef["head-sha"] = []string{"services/api/package.json", "services/api/yarn.lock"}
+	delete(client.filesByKey, fileKey("services/api/package.json", "base-sha"))
+	delete(client.filesByKey, fileKey("services/api/yarn.lock", "base-sha"))
+	client.compareChanges = nil
+	client.compareErr = &api.HTTPError{StatusCode: 404, Message: "dependency review disabled"}
 	return client
 }
 

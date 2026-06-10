@@ -28,5 +28,16 @@ jobs:
           gh extension install rad1092/gh-dep-risk --force
           gh dep-risk version
           gh dep-risk version --json
-          gh dep-risk pr 1 --repo rad1092/ascii-diagram-editor --lang en --format json --no-registry > dep-risk.json
-          grep -E '"score"|"level"|"dependency_review_available"' dep-risk.json
+          for pr in 3 1 2 4 5 6 7 8 9 10; do
+            gh dep-risk pr "$pr" --repo rad1092/gh-dep-risk-smoke-matrix --lang en --format json --no-registry > "dep-risk-${pr}.json"
+            grep -E '"score"|"level"|"dependency_review_available"' "dep-risk-${pr}.json"
+          done
+
+          set +e
+          gh dep-risk pr 11 --repo rad1092/gh-dep-risk-smoke-matrix --lang en --format json --no-registry > dep-risk-11.json
+          exit_code=$?
+          set -e
+          if [[ "$exit_code" != "2" ]]; then
+            echo "expected unsupported bun.lockb fixture to exit 2, got ${exit_code}" >&2
+            exit 1
+          fi

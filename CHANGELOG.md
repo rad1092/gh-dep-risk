@@ -4,6 +4,19 @@ All notable changes to `gh-dep-risk` will be documented in this file.
 
 ## Unreleased
 
+## v0.2.1 - 2026-06-10
+
+- Fixed a Yarn Classic local fallback panic when a package target exists only
+  on the pull request head side.
+- Treated `registry.yarnpkg.com` as a default Yarn registry source instead of
+  reporting noisy non-default-source warnings for normal Yarn Classic lockfile
+  entries.
+- Expanded `install-smoke` to install the published extension and run the full
+  owned read-only dependency smoke matrix, including unsupported `bun.lockb`
+  exit-code behavior.
+- Slimmed the README and moved detailed support and behavior contracts into
+  `docs/support-matrix.md` and `docs/behavior.md`.
+
 ## v0.2.0 - 2026-05-12
 
 - Documented the expanded owned live smoke fixture matrix covering Python,

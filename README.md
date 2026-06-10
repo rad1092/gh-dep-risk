@@ -3,208 +3,123 @@
 [![test](https://github.com/rad1092/gh-dependency-risk/actions/workflows/test.yml/badge.svg)](https://github.com/rad1092/gh-dependency-risk/actions/workflows/test.yml)
 [![install-smoke](https://github.com/rad1092/gh-dependency-risk/actions/workflows/install-smoke.yml/badge.svg)](https://github.com/rad1092/gh-dependency-risk/actions/workflows/install-smoke.yml)
 
-`gh-dep-risk` is a precompiled GitHub CLI extension that reviewers run on
-demand to summarize dependency risk in pull requests.
+```text
+       _               _            _      _
+  __ _| |__         __| | ___ _ __ | | __ (_)___| | __
+ / _` | '_ \ _____ / _` |/ _ \ '_ \| |/ / | / __| |/ /
+| (_| | | | |_____| (_| |  __/ |_) |   <  | \__ \   <
+ \__, |_| |_|      \__,_|\___| .__/|_|\_\ |_|___/_|\_\
+ |___/                       |_|
+```
 
-It is an extension instead of a server so it can reuse `gh` authentication,
-stay on the reviewer's machine or in a one-off workflow run, and avoid any
-webhook, queue, database, or dashboard infrastructure.
+`gh-dep-risk` is a precompiled GitHub CLI extension for on-demand pull request
+dependency risk summaries.
+
+It runs as `gh dep-risk`, reuses normal `gh` authentication, and does not run a
+server, webhook receiver, GitHub App, database, queue, or dashboard.
 
 ![gh-dep-risk animated terminal demo](docs/assets/demo.gif)
 
-The animated terminal capture above is an illustrative live E2E PR using Yarn
-local fallback. An asciinema-compatible recording is also checked in at
-[docs/assets/demo.cast](docs/assets/demo.cast); the checked-in examples under
-[`docs/examples`](docs/examples) are the exact renderer-backed output fixtures.
+The demo is generated from real CLI runs against owned live fixture pull
+requests. The asciinema-compatible recording is checked in at
+[docs/assets/demo.cast](docs/assets/demo.cast).
 
-## Scope
+## Why Use It
 
-- on-demand pull request dependency review through GitHub Dependency Review
-  API when GitHub provides dependency-review data for the PR
-- local fallback only when Dependency Review is unavailable, such as `403` or
-  `404`, for these static-file targets:
-  - npm: `package.json`, `package-lock.json`
-  - pnpm: `package.json`, `pnpm-lock.yaml`
-  - pnpm workspace discovery: `pnpm-workspace.yaml`
-  - yarn: `package.json`, classic or modern `yarn.lock`; Yarn Berry / modern
-    Yarn fallback is direct-dependency only and does not parse `.pnp.cjs` or
-    reconstruct the PnP graph
-  - Bun: `package.json` direct dependencies with matching text `bun.lock`
-    entries; `bun.lockb` is unsupported, with no resolver or full graph
-    reconstruction
-  - Python: `requirements.txt`, PEP 621 `pyproject.toml`, and Poetry
-    `pyproject.toml` direct dependency declarations; Poetry may use
-    `poetry.lock` and PEP 621 may use `uv.lock` to enrich direct resolved
-    versions and source metadata, with no resolver or full transitive analysis
-  - Go modules: `go.mod` `require` and `replace` changes, with `go.sum`
-    checksum changes treated as evidence only; no resolver, full module graph,
-    or `go list` / `go mod` execution
-- one Go binary
-- dependency review API first, local fallback only when dependency review is
-  unavailable
-- no server, webhook receiver, GitHub App, DB, queue, dashboard, or
-  broad local fallback beyond the narrow JavaScript, Python, and Go module
-  static-file fallback in this release
+- reviewer-facing summaries for dependency pull requests
+- GitHub Dependency Review API first
+- static local fallback only when Dependency Review is unavailable
+- honest unsupported behavior instead of pretending to resolve full graphs
+- optional PR timeline issue comment with one owned marker comment
+- `--fail-level` for CI or manual workflow gates
 
-Dependency Review API ecosystems surfaced in this release when GitHub provides
-them are separate from local fallback support:
-
-- Cargo
-- Composer
-- Go modules
-- Maven
-- npm
-- pip
-- pnpm
-- Poetry
-- RubyGems
-- Swift Package Manager
-- Yarn
+Use GitHub's Dependency Review Action when you want repository policy
+enforcement. Use vulnerability scanners such as OSV Scanner when you want a
+vulnerability database scan. Use `gh-dep-risk` when a reviewer wants a quick,
+auditable summary from a terminal or one-off workflow run.
 
 ## Install
 
-### Authenticate first
+Authenticate GitHub CLI first:
 
 ```bash
 gh auth login
 ```
 
-`go-gh` also respects:
-
-- `GH_TOKEN`
-- `GITHUB_TOKEN`
-- `GH_REPO`
-- `GH_HOST`
-
-`GH_REPO=OWNER/REPO` is useful outside a git checkout. `GH_HOST` is useful for
-GitHub Enterprise.
-
-### Install from GitHub
+Install the extension:
 
 ```bash
 gh extension install rad1092/gh-dep-risk
 ```
 
-Upgrade later with:
+Upgrade later:
 
 ```bash
 gh extension upgrade dep-risk
 ```
 
-### Install locally from this repo
+The install path intentionally uses `rad1092/gh-dep-risk` so GitHub CLI
+registers the command as `gh dep-risk`. The readable repository slug is
+`rad1092/gh-dependency-risk`.
 
-Linux or macOS:
-
-```bash
-go build -o gh-dep-risk .
-gh extension install .
-```
-
-Windows PowerShell:
-
-```powershell
-go build -o gh-dep-risk.exe .
-gh extension install .
-```
-
-This repo does not install itself automatically. Build the binary at the
-repository root first, then run `gh extension install .` manually.
-
-The installed command remains `gh dep-risk`.
-
-The repository itself also needs the `gh-` prefix because GitHub CLI extension
-install requires remote extension repositories to start with `gh-`.
-
-The public repository slug is `rad1092/gh-dependency-risk` for readability, but
-the stable install path intentionally remains `rad1092/gh-dep-risk` so GitHub
-CLI registers the command as `gh dep-risk`. Installing the readability slug
-directly registers the longer command name `gh dependency-risk`.
-
-The checkout directory name must still start with `gh-` for local extension
-install to work, so use a local folder such as `gh-dep-risk` when you clone
-for extension testing.
-
-## Commands
+## Quick Start
 
 ```bash
 gh dep-risk pr 123
 gh dep-risk pr https://github.com/OWNER/REPO/pull/123
-gh dep-risk pr --format json
-gh dep-risk pr 123 --list-targets
+gh dep-risk pr 123 --format json
 gh dep-risk pr 123 --path apps/web
-gh dep-risk pr 123 --path package.json --comment
-gh dep-risk pr --comment=false
-gh dep-risk pr --bundle-dir ./dep-risk-bundle
-gh dep-risk pr --comment
-gh dep-risk pr --fail-level high
-gh dep-risk version
+gh dep-risk pr 123 --comment
+gh dep-risk pr 123 --fail-level high
 gh dep-risk version --json
 ```
 
-Typical read-only live checks against owned fixture repositories:
-
-```bash
-gh dep-risk pr 3 --repo rad1092/gh-dep-risk-smoke-matrix --lang en --format json --no-registry
-gh dep-risk pr 4 --repo rad1092/gh-dep-risk-smoke-matrix --lang en --format json --no-registry
-gh dep-risk pr 10 --repo rad1092/gh-dep-risk-smoke-matrix --lang en --format json --no-registry
-```
-
-The owned smoke matrix covers npm, pnpm workspace, Yarn Classic, Python
-requirements, Python PEP 621, Poetry, uv, Go modules, Yarn Berry, Bun text
-`bun.lock`, and `bun.lockb` unsupported-only behavior. See
-[docs/smoke-test.md](docs/smoke-test.md) for the full command matrix and the
-separate unsupported-only fixture.
-
-Comment smoke is intentionally separate because it writes a PR timeline issue
-comment:
-
-```bash
-gh dep-risk pr 1 --repo rad1092/gh-dep-risk-smoke-comments --lang en --comment --no-registry
-```
-
-The comments repository may contain one marker comment per authenticated
-identity such as `rad1092` locally and `github-actions[bot]` from Actions.
-
-Command shape:
-
-- `gh dep-risk pr [<number>|<url>]`
-- `gh dep-risk version`
-
 If the PR argument is omitted, `gh dep-risk pr` resolves the PR for the current
-branch.
+branch. Use `GH_REPO=OWNER/REPO` outside a git checkout.
 
-## Flags
+## Supported Analysis
 
-### `gh dep-risk pr`
+Dependency Review API data is always preferred. Local fallback runs only when
+Dependency Review is unavailable, for these static-file targets:
 
-- `--repo owner/repo`
-- `--format human|json|markdown`
-- `--lang ko|en`
-- `--comment`
-- `--fail-level low|medium|high|critical|none`
-- `--no-registry` to skip npm-compatible registry publish-age lookups
-- `--bundle-dir <dir>`
-- `--path <repo-relative-dir-or-manifest>` repeatable
-- `--list-targets`
+| Area | Local fallback |
+| --- | --- |
+| npm | `package.json`, `package-lock.json` |
+| pnpm | `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` discovery |
+| Yarn Classic | `package.json`, classic `yarn.lock` |
+| Yarn Berry / modern Yarn | direct `package.json` declarations matched to modern `yarn.lock` |
+| Bun | direct `package.json` declarations matched to text `bun.lock` |
+| Python | `requirements.txt`, PEP 621 `pyproject.toml`, Poetry, optional `uv.lock` / `poetry.lock` direct enrichment |
+| Go modules | static `go.mod` `require` / `replace` changes, with `go.sum` checksum evidence only |
 
-### `gh dep-risk version`
+No local resolver, full transitive graph reconstruction, registry metadata
+expansion, `.pnp.cjs` parsing, or binary `bun.lockb` parsing is attempted. See
+[docs/support-matrix.md](docs/support-matrix.md) for the full scope and
+unsupported behavior, and [docs/behavior.md](docs/behavior.md) for target
+selection, scoring, bundles, and exit codes.
 
-- `--json`
+## Output
 
-## Config File
+Formats:
 
-`gh dep-risk pr` also reads a repo-local config file named
-`.gh-dep-risk.yml` from the current working directory when it exists.
+- `human`: concise reviewer summary
+- `json`: stable machine-readable report
+- `markdown`: PR-comment-ready output starting with `<!-- gh-dep-risk -->`
 
-Supported keys:
+Bundle output:
 
-- `lang: ko|en`
-- `fail_level: none|low|medium|high|critical`
-- `comment: true|false`
-- `path: apps/web` or `path: [apps/web, package.json]`
-- `no_registry: true|false`
+```bash
+gh dep-risk pr 123 --bundle-dir ./dep-risk-bundle
+```
 
-Example:
+This writes `dep-risk-human.txt`, `dep-risk.json`, `dep-risk.md`,
+`metadata.json`, and per-target files under `targets/` when multiple targets
+are analyzed.
+
+## Config
+
+`gh dep-risk pr` reads `.gh-dep-risk.yml` from the current directory when it
+exists.
 
 ```yaml
 lang: en
@@ -216,429 +131,48 @@ path:
 no_registry: false
 ```
 
-Precedence rules:
+CLI flags override config values. Unknown config keys are rejected.
 
-- CLI flags override config values
-- config values override built-in defaults
-- an explicit CLI `--path` replaces config `path`
-- explicit boolean CLI overrides such as `--comment=false` and
-  `--no-registry=false` override a config value of `true`
+## Comment Mode
 
-Unknown config keys are rejected with a clear error that includes the config
-file path. A missing config file is ignored.
+`--comment` uses PR timeline issue comments, never review comments.
 
-## What It Looks Like
-
-These examples are checked in under [docs/examples](docs/examples) and are
-derived from deterministic fixtures, render tests, and fixture-backed app
-tests.
-
-### Human output
-
-```text
-Repository: owner/repo
-PR: #123 Update dependencies
-Score: 48 (high)
-Blast radius: medium
-Dependency review available: false
-Why risky: left-pad crosses a major version boundary and declares an install script.
-```
-
-### Markdown comment
-
-```markdown
-<!-- gh-dep-risk -->
-## gh-dep-risk
-- Repository: `owner/repo`
-- PR: [#123](https://github.com/owner/repo/pull/123) Update dependencies
-- Score: `48` (`high`)
-- Why risky: left-pad crosses a major version boundary and declares an install script.
-```
-
-### JSON output
-
-```json
-{
-  "repo": "owner/repo",
-  "score": 48,
-  "level": "high",
-  "blast_radius": "medium",
-  "dependency_review_available": false
-}
-```
-
-## Output Formats
-
-- `human`: concise reviewer-oriented summary
-- `json`: stable machine-readable schema with repo, PR metadata, score, level,
-  blast radius, dependency review availability, summary bullets, recommended
-  actions, notes, detailed changes, and a `targets` array
-- `markdown`: comment-ready output that always starts with
-  `<!-- gh-dep-risk -->`
-
-English is the default language. Use `--lang ko` for Korean.
-
-`--bundle-dir` writes:
-
-- `dep-risk-human.txt`
-- `dep-risk.json`
-- `dep-risk.md`
-- `metadata.json`
-
-When multiple targets are analyzed, the bundle also includes:
-
-- `targets/<safe-target-name>/dep-risk.json`
-- `targets/<safe-target-name>/dep-risk.md`
-
-## Scoring Model
-
-The score model stays heuristic, deterministic, and intentionally auditable.
-
-- each dependency change is scored from named risk drivers with fixed weights
-- the overall PR score is the highest single-change score plus a small capped
-  bonus for additional risky changes
-- this keeps the main driver explainable while still reflecting multi-target
-  or multi-change PRs without turning the score into an opaque sum
-
-## Dependency Review And Fallback Matrix
-
-Dependency Review API data is always preferred when available. Local fallback
-is used only when the Dependency Review API is unavailable for the PR.
-
-| Ecosystem / manager | With GitHub Dependency Review | Without GitHub Dependency Review |
-| --- | --- | --- |
-| npm | Dependency Review data is used when available. | Local fallback analyzes `package.json` and `package-lock.json`. |
-| pnpm | Dependency Review data is used when available. | Local fallback analyzes `package.json`, `pnpm-lock.yaml`, and `pnpm-workspace.yaml` discovery. |
-| Yarn Classic | Dependency Review data is used when available. | Local fallback analyzes `package.json` and classic `yarn.lock`. |
-| Yarn Berry / modern Yarn | Dependency Review data is used when available. | Local fallback compares direct `package.json` declarations with matching modern `yarn.lock` entries. `.yarnrc.yml` is used for detection/nodeLinker notes only; no `.pnp.cjs`, cache archive inspection, Yarn command execution, registry lookup, or full PnP graph reconstruction. |
-| Bun | Dependency Review data is used when available. | Local fallback compares direct `package.json` declarations with matching text `bun.lock` entries. `bun.lockb` is unsupported; no Bun/npm/node execution, registry lookup, or full dependency graph reconstruction. |
-| Python `requirements.txt` / PEP 621 `pyproject.toml` + optional `uv.lock` / Poetry `pyproject.toml` + optional `poetry.lock` | Dependency Review data is used when available. | Local fallback compares direct dependency declarations and can use `uv.lock` or `poetry.lock` to enrich matching direct resolved versions and source metadata. No resolver, broad lockfile support, or full transitive analysis. |
-| Go modules | Dependency Review data is used when available. | Local fallback analyzes static `go.mod` `require`/`replace` changes. `go.sum` is checksum evidence only; no resolver, full module graph, `go list`, or `go mod` execution. |
-| Cargo, Composer, Maven, RubyGems, SwiftPM | Dependency Review data may be surfaced when GitHub provides it. | No local fallback in this release. |
-
-## Behavior
-
-`gh dep-risk pr` resolves the repository from `GH_REPO` or the current git
-remote, fetches PR metadata, and prefers GitHub dependency-review data when it
-is available. Repository-tree discovery remains in use for local fallback,
-`--list-targets`, and path validation.
-
-Supported target shapes:
-
-- dependency-review targets for Cargo, Composer, Go modules, Maven, npm, pip,
-  pnpm, Poetry, RubyGems, SwiftPM, and Yarn
-- npm root projects with `package.json` and `package-lock.json`
-- npm workspaces with a shared root `package-lock.json`
-- pnpm root projects with `package.json` and `pnpm-lock.yaml`
-- pnpm workspaces with `pnpm-workspace.yaml` and a shared root `pnpm-lock.yaml`
-- Yarn root projects with `package.json` and classic or modern `yarn.lock`
-- Yarn workspaces discovered from `package.json` workspaces and a shared root
-  `yarn.lock`
-- Bun root projects with `package.json` and text `bun.lock`
-- Bun workspaces discovered from `package.json` workspaces and a shared root
-  text `bun.lock`
-- nested standalone subprojects with their own `package.json` and either
-  `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, or `bun.lock`
-- Python `requirements.txt` direct dependency declarations
-- PEP 621 `pyproject.toml` direct dependencies from `[project].dependencies`
-  and `[project.optional-dependencies]`, with optional `uv.lock` direct
-  resolved-version and source enrichment
-- Poetry `pyproject.toml` direct dependencies from `[tool.poetry.dependencies]`,
-  `[tool.poetry.dev-dependencies]`, and `[tool.poetry.group.<name>.dependencies]`,
-  with optional `poetry.lock` direct resolved-version enrichment
-- Go modules `go.mod` `require` and `replace` changes, with optional sibling
-  `go.sum` checksum evidence notes only
-
-### Mixed ecosystems and JS workspaces
-
-Default behavior:
-
-- if one supported target changed, `gh-dep-risk` analyzes that target
-- if multiple supported targets changed, `gh-dep-risk` analyzes all of them and
-  emits one aggregate result plus per-target detail
-- if no supported target changed, the command exits with code `2`
-
-Useful examples:
-
-```bash
-gh dep-risk pr 123 --list-targets
-gh dep-risk pr 123 --path apps/web
-gh dep-risk pr 123 --path package.json --comment
-gh dep-risk pr 123 --bundle-dir ./out
-```
-
-Notes:
-
-- `--path` accepts either an exact manifest path or an owning directory when
-  that directory maps to exactly one detected target, and can be repeated
-- `--list-targets` prints a readable target list, validates any `--path`
-  filters, and exits without running PR file analysis or dependency review
-- npm workspaces reuse the shared root `package-lock.json`
-- pnpm workspaces reuse the shared root `pnpm-lock.yaml` and use
-  `pnpm-workspace.yaml` package globs for discovery
-- Yarn Berry / modern Yarn local fallback is static and direct-only: it reads
-  `package.json`, matching modern `yarn.lock` entries, and optional
-  `.yarnrc.yml` `nodeLinker` settings without running `yarn`, `npm`, or `node`
-- if multiple same-name Yarn Berry lockfile entries exist without an exact
-  descriptor/range match for a direct dependency, local fallback does not guess
-  a resolved version and records an unsupported-entry note
-- Yarn Berry / modern Yarn local fallback ignores transitive-only lockfile
-  updates, checksum-only updates, `.pnp.cjs`, PnP loader files, cache archives,
-  plugins, constraints, and full PnP graph reconstruction
-- Yarn Berry protocols such as `workspace:`, `portal:`, `link:`, `file:`,
-  `patch:`, git, and HTTP(S) sources are surfaced as conservative notes/source
-  validation signals when tied to changed direct dependencies
-- Bun local fallback is static and direct-only: it reads `package.json` and
-  matching text `bun.lock` entries without running `bun`, `npm`, or `node`
-- Bun `bun.lockb` binary lockfiles are not parsed in this phase, and
-  `bun.lockb`-only changes remain unsupported/no meaningful dependency change
-- Bun transitive-only and checksum-only lockfile updates do not create
-  dependency-change report entries
-- Bun `workspace:`, `file:`, `link:`, git, GitHub, and HTTP(S) sources are
-  surfaced as conservative source validation notes/actions only when tied to
-  changed direct dependencies
-- large lockfiles served by the GitHub contents API without inline content are
-  still fetched through the corresponding blob object instead of failing early
-- if a lockfile-only workspace change cannot be mapped exactly, the report calls
-  out that attribution is approximate instead of failing
-- if both `package-lock.json` and `pnpm-lock.yaml` exist for the same target
-  directory, `gh-dep-risk` will only auto-pick one when exactly one lockfile is
-  clearly changed in the PR; otherwise it returns an ambiguity error and tells
-  you to narrow the target or remove the unused lockfile
-- if dependency review is unavailable and the selected target belongs to an
-  ecosystem without local fallback support in this release, the command returns
-  a clear actionable error instead of pretending to analyze it
-- Python local fallback is declaration-oriented: unsupported requirement
-  includes, constraints, editable installs, unsupported Poetry dependency
-  shapes, and dependency groups outside the Poetry direct subset are not
-  resolved in this phase
-- `uv.lock` support is limited to enriching PEP 621 direct dependencies with
-  matching direct resolved versions and recognized source metadata; registry,
-  virtual, and workspace sources do not create non-registry source notes
-- standalone editable `uv.lock` sources are unsupported; `editable=true` is
-  only accepted as a `path` or `directory` source modifier
-- unknown `uv.lock` source shapes are reported as unsupported dependency
-  entries rather than guessed
-- `poetry.lock` support is limited to enriching direct Poetry dependencies with
-  resolved versions and source metadata; it does not reconstruct a full
-  transitive dependency graph
-- if a direct PEP 621 dependency declaration is unchanged but the matching
-  `uv.lock` resolved version or source changes, local fallback reports that
-  direct dependency as updated
-- `uv.lock` package changes without a matching direct dependency declaration in
-  `pyproject.toml` are treated as transitive-only and do not create report
-  changes
-- if a direct Poetry dependency declaration is unchanged but the matching
-  `poetry.lock` resolved version changes, local fallback reports that direct
-  dependency as updated
-- `poetry.lock` package changes without a matching direct dependency declaration
-  in `pyproject.toml` are treated as transitive-only and do not create report
-  changes
-- Go modules local fallback is static: it reads `go.mod` and optional sibling
-  `go.sum` content from the repository and never runs `go list`, `go mod`,
-  `go env`, or network module metadata lookups
-- Go modules local fallback reports `go.mod` `require` additions, removals,
-  updates, direct versus `// indirect` requirements, and `replace` additions,
-  removals, or changes; local `replace` targets are surfaced as non-registry
-  source validation notes/actions
-- Version-specific replace-only entries may use a stable display identity
-  including the old version, for example `example.com/lib@v1.0.0`, because the
-  existing JSON schema has no separate replacement identity field and schema
-  churn is out of scope
-- Go modules local fallback may note pseudo-versions, `go` directive changes,
-  `toolchain` directive changes, and `go.sum` checksum evidence changes only
-  when the target also has a meaningful `require` or `replace` result
-- `go.sum` is not treated as a lockfile or dependency tree, so `go.sum`-only
-  checksum changes do not create dependency-change report entries
-- out of scope for now: Python resolver behavior, PyPI/npm/module registry
-  metadata lookup, `bun.lockb`, `bunfig.toml`, Bun resolver/workspace graph
-  semantics, `package.json5`, `package.yaml`, pnpm catalogs, pnpm branch
-  lockfiles, broad non-JS resolver-style fallback, Go module graph
-  reconstruction, full Yarn Plug'n'Play graph resolution, `.pnp.cjs` parsing,
-  Yarn plugin/constraint interpretation, SARIF output, license risk, and
-  OSV/Socket integration
-
-If dependency review returns `403` or `404`, `gh-dep-risk` falls back to
-supported local fallback analysis and explicitly reports
-`dependency_review_available=false`. Local fallback does not merge in missing
-Python, Go, Yarn, or Bun entries when Dependency Review is already available.
-Registry publish-age lookups are best effort and limited to npm-compatible
-registry packages from npm, pnpm, and Yarn-style targets. They are skipped with
-`--no-registry`, while API-provided release-age signals remain available when
-GitHub already supplies them. Python, Go, Poetry, uv, and Bun local fallback do
-not perform PyPI, Go module proxy, or Bun registry publish-age lookups.
-
-If there is no meaningful supported dependency change, the command exits with
-code `2`.
-
-### Comment upsert rules
-
-`--comment` uses PR timeline issue comments, not review comments.
-
-The marker comment is:
-
-```html
-<!-- gh-dep-risk -->
-```
-
-Behavior:
-
+- marker comment: `<!-- gh-dep-risk -->`
 - exactly one marker comment owned by the authenticated user is maintained
-- if multiple own marker comments exist, the newest is updated and older own
-  duplicates are deleted
-- another author's marker comment is never edited or deleted
-- if another author already has a marker comment, `gh-dep-risk` warns on stderr
-  and only manages the current user's own comment
+- older duplicate marker comments owned by the same user are deleted
+- marker comments from other authors are never edited or deleted
 
-## Version Metadata
+## Validation
 
-`gh dep-risk version` prints human-readable build metadata. Release-quality
-builds inject:
+Release validation uses real pull requests in owned smoke repositories, not
+only fixtures. The current matrix covers npm, pnpm, Yarn Classic, Python
+requirements, PEP 621, Poetry, uv, Go modules, Yarn Berry, Bun text
+`bun.lock`, and unsupported `bun.lockb` behavior.
 
-- `version`
-- `commit`
-- `date`
+See [docs/smoke-test.md](docs/smoke-test.md) for the exact commands.
 
-Example:
-
-```bash
-gh dep-risk version
-gh dep-risk version --json
-```
-
-Local `go build` still works with safe defaults. Release-quality binaries should
-use ldflags, or the provided `Makefile`, so the version command does not report
-only `dev`.
-
-## Exit Codes
-
-- `0` success
-- `1` general error
-- `2` no supported dependency change found
-- `3` final score meets or exceeds `--fail-level`
-- `4` authentication required or insufficient permissions
-
-## Local Development
-
-Run tests:
+## Development
 
 ```bash
 go test ./...
-```
-
-Build with local defaults:
-
-```bash
 go build -o gh-dep-risk .
-./gh-dep-risk version
-```
-
-Build with explicit metadata:
-
-```bash
-go build -ldflags "-s -w -X github.com/rad1092/gh-dependency-risk/cmd.version=dev-local -X github.com/rad1092/gh-dependency-risk/cmd.commit=$(git rev-parse --short HEAD) -X github.com/rad1092/gh-dependency-risk/cmd.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o gh-dep-risk .
-```
-
-Or use the `Makefile`:
-
-```bash
-make test
-make build VERSION=dev-local
+./gh-dep-risk version --json
 ```
 
 Windows PowerShell:
 
 ```powershell
-$date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-$commit = git rev-parse --short HEAD
-go build -ldflags "-s -w -X github.com/rad1092/gh-dependency-risk/cmd.version=dev-local -X github.com/rad1092/gh-dependency-risk/cmd.commit=$commit -X github.com/rad1092/gh-dependency-risk/cmd.date=$date" -o gh-dep-risk.exe .
+go build -o gh-dep-risk.exe .
 .\gh-dep-risk.exe version --json
 ```
 
-Local extension install remains manual:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local development and
+[RELEASING.md](RELEASING.md) for release steps.
 
-```bash
-gh extension install .
-```
+## Contributors
 
-## Run Without Local Install
-
-You can run the existing CLI engine from GitHub Actions without installing the
-extension locally.
-
-### From the Actions tab
-
-Use the `dep-risk-manual` workflow and provide:
-
-- `pr`: required PR number or full PR URL
-- `repo`: optional repository override
-- `lang`
-- `fail_level`
-- `comment`
-- `no_registry`
-
-`comment=true` is limited to PRs in this repository. For remote comment-upsert
-smoke, run the target smoke repository's own workflow instead so its
-repository-scoped `GITHUB_TOKEN` writes to its own PR.
-
-The workflow file must exist on the default branch for the **Run workflow**
-button to appear.
-
-### From GitHub CLI
-
-```bash
-gh workflow run .github/workflows/dep-risk-manual.yml -f pr=123
-gh workflow run .github/workflows/dep-risk-manual.yml -f pr=https://github.com/OWNER/REPO/pull/123
-gh workflow run .github/workflows/dep-risk-manual.yml -f pr=3 -f repo=rad1092/gh-dep-risk-smoke-matrix -f no_registry=true
-gh run watch
-
-gh workflow run comment-smoke.yml --repo rad1092/gh-dep-risk-smoke-comments -f pr=1 -f source_ref=main -f no_registry=true
-gh run watch --repo rad1092/gh-dep-risk-smoke-comments
-```
-
-### Workflow results
-
-Each manual run:
-
-- builds and tests the repo
-- builds `gh-dep-risk` once with workflow metadata
-- runs the CLI once
-- uploads the output bundle artifact
-- appends aggregate markdown output to the workflow job summary
-
-If `comment=true`, comment ownership follows the workflow-authenticated identity.
-This workflow uses only its repository-scoped `GITHUB_TOKEN`; in GitHub Actions
-that identity is `github-actions[bot]`.
-
-When the workflow is running in a different repository than the target PR,
-`GITHUB_TOKEN` may not be allowed to read the target PR at all, especially for
-private cross-repo targets. In that case the workflow can fail before artifact
-upload. Cross-repo comment mode is intentionally refused by this workflow.
-
-Remote comment smoke is handled by
-`rad1092/gh-dep-risk-smoke-comments/.github/workflows/comment-smoke.yml`. That
-workflow checks out this repository, builds the requested ref, and comments on
-its own fixture PR with its own `GITHUB_TOKEN`, so no PAT secret is needed.
-
-### Self-hosted runners
-
-These workflows use Node 24 based GitHub Actions majors. Keep self-hosted
-runners current; GitHub's Node 24 migration guidance uses Actions Runner
-`v2.327.1+` as the baseline. If a self-hosted runner rejects `checkout@v5`,
-upgrade the runner before using these workflows.
-
-## Release
-
-Push a `v*` tag to trigger `.github/workflows/release.yml`.
-
-The release workflow:
-
-- runs `go test ./...`
-- injects version, commit, and build date metadata into binaries
-- uses `cli/gh-extension-precompile@v2`
-- publishes precompiled binaries for GitHub CLI extension installs
-
-For the exact first release procedure, see [RELEASING.md](RELEASING.md).
+- rad1092
+- Codex, AI contributor for implementation, docs, and release validation
 
 ## License
 

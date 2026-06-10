@@ -63,8 +63,8 @@ func loadYarnBerryLocalInputIfModern(ctx context.Context, cache *repoDataCache, 
 	}
 
 	modern := isYarnBerryTarget(target) ||
-		npm.IsYarnBerryPackageManager(baseManifest.PackageManager) ||
-		npm.IsYarnBerryPackageManager(headManifest.PackageManager) ||
+		manifestUsesYarnBerry(baseManifest) ||
+		manifestUsesYarnBerry(headManifest) ||
 		npm.LooksLikeYarnBerryLockfile(baseLockData) ||
 		npm.LooksLikeYarnBerryLockfile(headLockData)
 	if !modern {
@@ -99,6 +99,10 @@ func loadYarnBerryLocalInputIfModern(ctx context.Context, cache *repoDataCache, 
 	}
 
 	return buildYarnBerryLocalInput(target, baseManifest, headManifest, baseLockfile, headLockfile, baseYarnRC, headYarnRC, yarnRCPath), true, nil
+}
+
+func manifestUsesYarnBerry(manifest *npm.PackageManifest) bool {
+	return manifest != nil && npm.IsYarnBerryPackageManager(manifest.PackageManager)
 }
 
 func buildYarnBerryLocalInput(target analysis.AnalysisTarget, baseManifest, headManifest *npm.PackageManifest, baseLockfile, headLockfile npm.YarnBerryLockfile, baseYarnRC, headYarnRC npm.YarnRC, yarnRCPath string) analysis.LocalInput {

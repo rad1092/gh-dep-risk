@@ -116,10 +116,11 @@ func TestAddedTransitivePathsForTargetReturnsSortedUniquePaths(t *testing.T) {
 
 func TestDetectSourceKind(t *testing.T) {
 	tests := map[string]SourceKind{
-		"https://registry.npmjs.org/left-pad/-/left-pad-1.0.0.tgz": SourceDefaultRegistry,
-		"https://npm.pkg.github.com/download/pkg.tgz":              SourceOtherRegistry,
-		"git+https://github.com/npm/cli.git":                       SourceGit,
-		"file:../local-package":                                    SourceUnknown,
+		"https://registry.npmjs.org/left-pad/-/left-pad-1.0.0.tgz":   SourceDefaultRegistry,
+		"https://registry.yarnpkg.com/left-pad/-/left-pad-1.0.0.tgz": SourceDefaultRegistry,
+		"https://npm.pkg.github.com/download/pkg.tgz":                SourceOtherRegistry,
+		"git+https://github.com/npm/cli.git":                         SourceGit,
+		"file:../local-package":                                      SourceUnknown,
 	}
 
 	for resolved, expected := range tests {

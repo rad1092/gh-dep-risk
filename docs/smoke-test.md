@@ -75,9 +75,6 @@ Current owned live read-only fixture coverage:
 | `rad1092/gh-dep-risk-smoke-matrix` | `#10` | Bun `package.json` + text `bun.lock` |
 | `rad1092/gh-dep-risk-smoke-matrix` | `#11` | Bun `bun.lockb` unsupported-only behavior |
 
-Phase 6A validated the expanded fixtures with a local binary built from
-`a8252d281537968aef65e680583e5208df4d79ce`. Installed extensions older than
-that commit may not validate the newer fixture PRs until a release catches up.
 For unreleased validation, use the same arguments with `./gh-dep-risk` or the
 platform-specific local binary path instead of `gh dep-risk`.
 
@@ -115,6 +112,18 @@ Verify:
 - PR `#1` has exactly one `<!-- gh-dep-risk -->` marker comment for the current
   authenticated user; marker comments owned by other users or bots are left
   untouched
+
+### Demo GIF refresh
+
+The README GIF is generated from actual CLI runs against owned live fixture PRs,
+not from mocked output:
+
+```powershell
+go build -o gh-dep-risk.exe .
+powershell -ExecutionPolicy Bypass -File scripts\render-demo.ps1 -Binary .\gh-dep-risk.exe
+```
+
+The script updates `docs/assets/demo.cast` and `docs/assets/demo.gif`.
 
 ## 2. Workflow dispatch run
 
@@ -168,6 +177,10 @@ Verify:
 gh extension install rad1092/gh-dep-risk --force
 gh dep-risk version
 gh dep-risk version --json
+for pr in 3 1 2 4 5 6 7 8 9 10; do
+  gh dep-risk pr "$pr" --repo rad1092/gh-dep-risk-smoke-matrix --lang en --format json --no-registry
+done
+gh dep-risk pr 11 --repo rad1092/gh-dep-risk-smoke-matrix --lang en --format json --no-registry
 ```
 
 Verify:
@@ -176,6 +189,8 @@ Verify:
 - the reported version matches the latest tag
 - the command does not report only `dev`
 - the installed command is `gh dep-risk`, not `gh dependency-risk`
+- PRs `#1` through `#10` in the matrix exit `0`
+- PR `#11` exits `2` because binary `bun.lockb` is unsupported by design
 
 ## 4. Comment mode
 

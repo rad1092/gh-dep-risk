@@ -132,6 +132,10 @@ gh workflow run install-smoke.yml
 gh run watch
 ```
 
+The workflow installs the published extension and runs the owned read-only
+smoke matrix across npm, pnpm, Yarn Classic, Python, Poetry, uv, Go modules,
+Yarn Berry, Bun text lockfile, and the unsupported `bun.lockb` fixture.
+
 ## 10. Self-hosted runner note
 
 These workflows use Node 24 based GitHub Actions majors. Keep self-hosted

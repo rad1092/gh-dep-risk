@@ -761,7 +761,7 @@ func DetectSourceKind(resolved string) SourceKind {
 		return SourceGit
 	}
 	if strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "http://") {
-		if strings.Contains(lower, "registry.npmjs.org") {
+		if strings.Contains(lower, "registry.npmjs.org") || strings.Contains(lower, "registry.yarnpkg.com") {
 			return SourceDefaultRegistry
 		}
 		return SourceOtherRegistry
