@@ -7,3 +7,5 @@
 /.idea/
 /.agents/
 /.codex/
+/.claude/settings.local.json
+/.claude/settings.json
