@@ -88,12 +88,17 @@ func runPR(stdout, stderr io.Writer, args []string) int {
 		return 1
 	}
 
-	runErr := app.RunPR(context.Background(), app.RunPRDependencies{
+	deps := app.RunPRDependencies{
 		GitHub:   ghclient.NewClient(),
 		Registry: npm.NewRegistryClient(),
 		Stdout:   stdout,
 		Stderr:   stderr,
-	}, opts)
+	}
+	if wd, err := os.Getwd(); err == nil {
+		// Inside a clone, name the files that import each changed package.
+		deps.Imports = app.GitImportFinder{Dir: wd}
+	}
+	runErr := app.RunPR(context.Background(), deps, opts)
 	if runErr == nil {
 		return 0
 	}

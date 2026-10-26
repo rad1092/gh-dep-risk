@@ -64,6 +64,10 @@ const (
 	DriverPlatformRestricted   = "platform_restricted_package"
 	DriverTransitiveFive       = "added_transitive_count_ge_5"
 	DriverTransitiveFifteen    = "added_transitive_count_ge_15"
+	DriverNameSimilarToPopular = "name_similar_to_popular_package"
+	DriverNewPackage           = "package_first_published_recently"
+	DriverPublisherChanged     = "publisher_changed"
+	DriverProvenanceDropped    = "provenance_dropped"
 )
 
 const (
@@ -73,6 +77,7 @@ const (
 	ActionInspectTree      = "inspect_dependency_tree"
 	ActionRunTargetedTests = "run_targeted_tests"
 	ActionValidateSources  = "validate_non_registry_sources"
+	ActionVerifyPackage    = "verify_package_identity"
 )
 
 const (
@@ -164,6 +169,13 @@ type Note struct {
 	Detail     string `json:"detail,omitempty"`
 }
 
+// ScorePart is one signal's contribution to a change's score. The parts of a
+// change add up to its score unless the sum is over the cap of 100.
+type ScorePart struct {
+	Signal string `json:"signal"`
+	Points int    `json:"points"`
+}
+
 type DependencyChange struct {
 	Name                 string          `json:"name"`
 	Manifest             string          `json:"manifest,omitempty"`
@@ -179,8 +191,12 @@ type DependencyChange struct {
 	Score                int             `json:"score"`
 	Level                RiskLevel       `json:"level"`
 	RiskDrivers          []string        `json:"risk_drivers"`
+	ScoreBreakdown       []ScorePart     `json:"score_breakdown"`
 	Vulnerabilities      []Vulnerability `json:"vulnerabilities,omitempty"`
 	AddedTransitiveCount int             `json:"added_transitive_count"`
+	// ImportedBy lists source files in the checkout that import the package.
+	// It is filled only when gh-dep-risk runs inside a clone of the repository.
+	ImportedBy []string `json:"imported_by,omitempty"`
 }
 
 type AnalysisResult struct {
@@ -222,6 +238,19 @@ type Input struct {
 	HeadManifest              *npm.PackageManifest
 	BaseLockfile              *npm.Lockfile
 	HeadLockfile              *npm.Lockfile
+	// Facts holds npm registry facts for each change, keyed by the version it
+	// moves to and, for an update, the version it replaces. Two targets that
+	// move the same package to the same version from different versions get
+	// separate comparisons.
+	Facts map[RegistryLookup]npm.VersionFacts
+}
+
+// RegistryLookup is one package version to look up in the npm registry,
+// with the version it replaces when the change is an update.
+type RegistryLookup struct {
+	Name            string
+	Version         string
+	PreviousVersion string
 }
 
 func ParseRiskLevel(value string) (RiskLevel, error) {
@@ -270,6 +299,23 @@ func LevelForScore(score int) RiskLevel {
 }
 
 func CollectRegistryTargets(input Input) []PackageVersion {
+	lookups := CollectRegistryLookups(input)
+	targets := make([]PackageVersion, 0, len(lookups))
+	seen := map[PackageVersion]struct{}{}
+	for _, lookup := range lookups {
+		key := PackageVersion{Name: lookup.Name, Version: lookup.Version}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		targets = append(targets, key)
+	}
+	return targets
+}
+
+// CollectRegistryLookups lists the registry versions an npm-family target
+// moves to, sorted by name and version.
+func CollectRegistryLookups(input Input) []RegistryLookup {
 	switch input.Target.PackageManager {
 	case "npm", "pnpm", "yarn":
 	default:
@@ -277,22 +323,29 @@ func CollectRegistryTargets(input Input) []PackageVersion {
 	}
 	directNames := targetDirectNames(input)
 	candidates := collectCandidateSummaries(input, buildTargetLockViews(input, directNames), directNames)
-	seen := map[PackageVersion]struct{}{}
+	seen := map[RegistryLookup]struct{}{}
 	for _, candidate := range candidates {
 		if candidate.ToVersion == "" || candidate.HeadPackage.WorkspaceLocal {
 			continue
 		}
-		seen[PackageVersion{Name: candidate.Name, Version: candidate.ToVersion}] = struct{}{}
-	}
-	targets := make([]PackageVersion, 0, len(seen))
-	for target := range seen {
-		targets = append(targets, target)
-	}
-	sort.Slice(targets, func(i, j int) bool {
-		if targets[i].Name == targets[j].Name {
-			return targets[i].Version < targets[j].Version
+		lookup := RegistryLookup{Name: candidate.Name, Version: candidate.ToVersion}
+		if candidate.ChangeType == ChangeUpdated {
+			lookup.PreviousVersion = candidate.FromVersion
 		}
-		return targets[i].Name < targets[j].Name
+		seen[lookup] = struct{}{}
+	}
+	lookups := make([]RegistryLookup, 0, len(seen))
+	for lookup := range seen {
+		lookups = append(lookups, lookup)
+	}
+	sort.Slice(lookups, func(i, j int) bool {
+		if lookups[i].Name != lookups[j].Name {
+			return lookups[i].Name < lookups[j].Name
+		}
+		if lookups[i].Version != lookups[j].Version {
+			return lookups[i].Version < lookups[j].Version
+		}
+		return lookups[i].PreviousVersion < lookups[j].PreviousVersion
 	})
-	return targets
+	return lookups
 }

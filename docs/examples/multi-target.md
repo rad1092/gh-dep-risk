@@ -2,29 +2,40 @@
 ## gh-dep-risk
 - Repository: `owner/repo`
 - PR: [#456](https://github.com/owner/repo/pull/456) Update workspace dependencies
-- Score: `52` (`high`)
+- Score: `29` (`medium`), 28 from apps/web / react-router-dom + 1 for the other changes
 - Blast radius: `medium`
 - Dependency review available: `true`
-- Why risky: apps/web / axios adds a new direct runtime dependency.
+- Why risky: apps/web / react-router-dom crosses a major version boundary and was published within the last 7 days.
+
+### Check first
+1. react-router-dom@7.1.0 was published in the last 7 days. If the update isn't urgent, wait a few days before merging.
+2. react-router-dom moves from 6.26.0 to 7.1.0. Read the release notes for breaking changes. It is used in `apps/web/src/App.tsx`, `apps/web/src/routes.tsx` and 1 more.
+3. tailwind-merge is a new dependency. Check that it is the package you meant: `npm view tailwind-merge repository.url`
 
 ### Summary
 - 2 dependency changes were detected.
 - 2 dependency targets were analyzed.
-- Top risk signals: direct runtime addition.
+- Top risk signals: major version bump, recently published version, direct runtime addition.
 
 ### Targets
-- `apps/web` (workspace, ecosystem=npm, score `48`, level `high`, blast `medium`)
-  - `axios -> 1.7.0` (added/runtime, score `48`)
-    - A new direct runtime dependency was added.
-- `packages/ui` (workspace, ecosystem=npm, score `22`, level `medium`, blast `low`)
-  - `tailwind-merge -> 2.3.0` (added/runtime, score `22`)
-    - A new direct runtime dependency was added.
+- `apps/web` (workspace, ecosystem=npm, score `28`, level `medium`, blast `medium`)
+  - `react-router-dom 6.26.0 -> 7.1.0` (updated/runtime, score `28`)
+    - `+10` The dependency crosses a major version boundary.
+    - `+18` The target version was published within the last 7 days.
+    - Imported by: `apps/web/src/App.tsx`, `apps/web/src/routes.tsx` and 1 more
+- `packages/ui` (workspace, ecosystem=npm, score `12`, level `low`, blast `medium`)
+  - `tailwind-merge -> 2.3.0` (added/runtime, score `12`)
+    - `+12` A new direct runtime dependency was added.
 
 ### Recommended actions
-- Run targeted smoke checks for apps/web and packages/ui and the code paths that import the changed packages.
+- Check release notes and migration guidance for react-router-dom before merging.
+- Run the tests that cover `apps/web/src/App.tsx`, `apps/web/src/routes.tsx` and 1 more, which import the changed packages.
 
 ### Quick commands
 - `cd apps/web && npm ls --all`
-- `cd apps/web && npm ls axios`
+- `cd apps/web && npm ls react-router-dom`
+- `cd apps/web && npm view react-router-dom@7.1.0 time --json`
 - `cd packages/ui && npm ls --all`
+- `cd packages/ui && npm ls tailwind-merge`
+- `cd packages/ui && npm view tailwind-merge@2.3.0 time --json`
 

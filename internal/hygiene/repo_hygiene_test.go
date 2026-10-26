@@ -9,7 +9,7 @@ import (
 
 func TestPublicDocsUseCurrentRepositorySlugForBadges(t *testing.T) {
 	root := repoRoot(t)
-	currentRemoteSlug := "rad1092/gh-dependency-risk"
+	currentRemoteSlug := "rad1092/gh-dep-risk"
 
 	data, err := os.ReadFile(filepath.Join(root, "README.md"))
 	if err != nil {
@@ -23,6 +23,26 @@ func TestPublicDocsUseCurrentRepositorySlugForBadges(t *testing.T) {
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("README.md should reference the current remote repository slug in badge %q", want)
+		}
+	}
+}
+
+func TestActionInstallsTheExtensionAndRunsTheStableCommand(t *testing.T) {
+	root := repoRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, "action.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"using: composite",
+		"gh extension install rad1092/gh-dep-risk --force",
+		`gh dep-risk "${args[@]}"`,
+		`--bundle-dir "$bundle"`,
+		"GITHUB_STEP_SUMMARY",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("action.yml missing %q", want)
 		}
 	}
 }

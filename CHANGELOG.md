@@ -2,8 +2,28 @@
 
 All notable changes to `gh-dep-risk` will be documented in this file.
 
-## Unreleased
+## v0.3.0 - 2026-10-26
 
+- Every change now shows how its score adds up, for example
+  `score=48 (10 major version bump + 18 recently published version + 20 install script)`,
+  and the score line says which change it comes from. JSON changes carry a
+  `score_breakdown` list.
+- Reports start with up to three concrete checks (`check_first` in JSON), such
+  as `npm view <package>@<version> scripts` for an install script.
+- New signals: a newly added npm package one edit away from a popular one (20),
+  a dropped npm provenance attestation (20), a package first published less
+  than 30 days ago (15), and a version published by a different npm account
+  (10). They come from the same registry request as the publish date.
+- npm metadata up to 64 MiB is read, so popular packages with many versions no
+  longer fail the publish-date lookup at 1 MiB.
+- Inside a clone that has the PR's commits, the report names the files that
+  import each changed npm package and points the test advice at them.
+- Added a composite GitHub Action (`uses: rad1092/gh-dep-risk@v0.3.0`) that
+  comments, writes the job summary and exposes `score` and `level` outputs.
+- `docs/examples/` is now rendered from real sample analyses, so the scores in
+  it match the scoring code.
+- The README leads with the demo and an example report. Agent rules moved
+  from `AGENTS.md` into `CONTRIBUTING.md`.
 - Removed a duplicated label in the Go checksum note so it now reads
   `Go checksum evidence changed: go.sum (added=N, removed=M)` instead of
   repeating "checksum evidence changed".
