@@ -2,7 +2,7 @@
 
 All notable changes to `gh-dep-risk` will be documented in this file.
 
-## Unreleased
+## v0.3.0 - 2026-10-26
 
 - Every change now shows how its score adds up, for example
   `score=48 (10 major version bump + 18 recently published version + 20 install script)`,
