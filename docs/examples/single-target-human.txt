@@ -1,27 +1,34 @@
 Repository: owner/repo
 PR: #123 Update dependencies
-Score: 48 (high)
+Score: 48 (high), from left-pad
 Blast radius: medium
 Dependency review available: false
-Why risky: left-pad crosses a major version boundary and declares an install script.
+Why risky: left-pad crosses a major version boundary and was published within the last 7 days.
+
+Check first:
+1. left-pad@2.0.0 runs a script when it is installed. Read it before installing: npm view left-pad@2.0.0 scripts
+2. left-pad@2.0.0 was published in the last 7 days. If the update isn't urgent, wait a few days before merging.
+3. left-pad moves from 1.0.0 to 2.0.0. Read the release notes for breaking changes.
 
 Summary:
-- 1 dependency changes were detected.
+- 1 dependency change was detected.
 - Dependency Review was unavailable, so local fallback analysis was used.
-- Top risk signals: major version bump, install script.
+- Top risk signals: install script, major version bump, recently published version.
 
 Notes:
 - Dependency review API was unavailable, so local fallback analysis was used.
 
 Targets:
 - root [root, ecosystem=npm] score=48 (high), blast=medium
-  left-pad 1.0.0 -> 2.0.0 [updated/runtime] score=48
-    Risk signals: The dependency crosses a major version boundary., The package declares an install script.
+  left-pad 1.0.0 -> 2.0.0 [updated/runtime] score=48 (10 major version bump + 18 recently published version + 20 install script)
   Notes: Dependency review API was unavailable, so local fallback analysis was used.
 
 Recommended actions:
 - Inspect install scripts and published tarballs for left-pad before merging.
 - Check release notes and migration guidance for left-pad before merging.
+- Run targeted smoke checks for root and the code paths that import the changed packages.
 
 Quick commands:
+- npm ls --all
 - npm ls left-pad
+- npm view left-pad@2.0.0 time --json

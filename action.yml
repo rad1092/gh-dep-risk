@@ -1,0 +1,116 @@
+name: gh-dep-risk
+description: Summarize a pull request's dependency changes and list what to check first, as a PR comment and job summary.
+author: rad1092
+branding:
+  icon: package
+  color: orange
+
+inputs:
+  pr:
+    description: Pull request number or URL. Defaults to the pull request that triggered the workflow.
+    required: false
+    default: ${{ github.event.pull_request.number }}
+  comment:
+    description: Post or update one PR comment with the summary.
+    required: false
+    default: "true"
+  lang:
+    description: Report language, en or ko.
+    required: false
+    default: en
+  fail-level:
+    description: Fail the step when the score reaches this level (low, medium, high, critical). none never fails.
+    required: false
+    default: none
+  path:
+    description: Only analyze these directories or manifests, one per line.
+    required: false
+    default: ""
+  no-registry:
+    description: Skip npm registry lookups.
+    required: false
+    default: "false"
+  version:
+    description: Release tag of gh-dep-risk to install, for example v0.3.0. Defaults to the tag this action is used at, or the latest release when used at a branch.
+    required: false
+    default: ""
+  token:
+    description: Token for the GitHub API. Needs pull-requests read, and write to comment.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  score:
+    description: Overall score from 0 to 100. Empty when no supported dependency changed.
+    value: ${{ steps.run.outputs.score }}
+  level:
+    description: low, medium, high or critical. Empty when no supported dependency changed.
+    value: ${{ steps.run.outputs.level }}
+  report:
+    description: Path to the JSON report.
+    value: ${{ steps.run.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install gh-dep-risk
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: |
+        if [[ -z "$VERSION" && "$ACTION_REF" =~ ^v[0-9] ]]; then
+          VERSION="$ACTION_REF"
+        fi
+        if [[ -n "$VERSION" ]]; then
+          gh extension install rad1092/gh-dep-risk --force --pin "$VERSION"
+        else
+          gh extension install rad1092/gh-dep-risk --force
+        fi
+        gh dep-risk version
+
+    - name: Run gh-dep-risk
+      id: run
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        INPUT_PR: ${{ inputs.pr }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_LANG: ${{ inputs.lang }}
+        INPUT_FAIL_LEVEL: ${{ inputs.fail-level }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_NO_REGISTRY: ${{ inputs.no-registry }}
+      run: |
+        if [[ -z "$INPUT_PR" ]]; then
+          echo "::error::No pull request to analyze. Run on pull_request events or set the pr input."
+          exit 1
+        fi
+        bundle="$RUNNER_TEMP/gh-dep-risk"
+        rm -rf "$bundle"
+        args=(pr "$INPUT_PR" --lang "$INPUT_LANG" --fail-level "$INPUT_FAIL_LEVEL" --bundle-dir "$bundle")
+        if [[ "$INPUT_COMMENT" == "true" ]]; then args+=(--comment); fi
+        if [[ "$INPUT_NO_REGISTRY" == "true" ]]; then args+=(--no-registry); fi
+        while IFS= read -r path; do
+          if [[ -n "$path" ]]; then args+=(--path "$path"); fi
+        done <<< "$INPUT_PATH"
+
+        set +e
+        gh dep-risk "${args[@]}"
+        code=$?
+        set -e
+
+        if [[ -f "$bundle/dep-risk.json" ]]; then
+          echo "report=$bundle/dep-risk.json" >> "$GITHUB_OUTPUT"
+          echo "score=$(jq -r .score "$bundle/dep-risk.json")" >> "$GITHUB_OUTPUT"
+          echo "level=$(jq -r .level "$bundle/dep-risk.json")" >> "$GITHUB_OUTPUT"
+          cat "$bundle/dep-risk.md" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        case "$code" in
+          0) ;;
+          2) echo "No supported dependency change in this pull request." | tee -a "$GITHUB_STEP_SUMMARY" ;;
+          3) echo "::error::Dependency risk reached the fail level ($INPUT_FAIL_LEVEL)."; exit 3 ;;
+          4) echo "::error::The token cannot read this pull request or post the comment. Give the job pull-requests: write, or set comment: false for pull requests from forks."; exit 4 ;;
+          *) exit "$code" ;;
+        esac

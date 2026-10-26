@@ -15,8 +15,13 @@ const (
 	scorePlatformRestricted   = 6
 	scoreTransitiveFive       = 12
 	scoreTransitiveFifteen    = 8
+	scoreNameSimilarToPopular = 20
+	scoreNewPackage           = 15
+	scorePublisherChanged     = 10
+	scoreProvenanceDropped    = 20
 
 	recentPublishWindow        = 7 * 24 * time.Hour
+	newPackageWindow           = 30 * 24 * time.Hour
 	transitiveCountThreshold5  = 5
 	transitiveCountThreshold15 = 15
 	changeScoreCap             = 100
@@ -35,35 +40,65 @@ const (
 	aggregateBonusCap                = 15
 )
 
-func scoreChange(input Input, candidate candidateSummary, views targetLockViews, publishedAt map[PackageVersion]time.Time) (int, []string) {
-	score := 0
-	drivers := make([]string, 0, 4)
-	add := func(condition bool, points int, driver string) {
-		if !condition {
+// scoreSheet collects the signals that apply to one change, in the order they
+// are reported.
+type scoreSheet struct {
+	parts []ScorePart
+}
+
+func (s *scoreSheet) add(condition bool, points int, signal string) {
+	if !condition {
+		return
+	}
+	for _, part := range s.parts {
+		if part.Signal == signal {
 			return
 		}
-		score += points
-		drivers = append(drivers, driver)
 	}
+	s.parts = append(s.parts, ScorePart{Signal: signal, Points: points})
+}
 
-	add(len(candidate.Vulnerabilities) > 0, scoreKnownVulnerabilities, DriverKnownVulnerabilities)
-	add(candidate.ChangeType == ChangeAdded && candidate.Direct && (candidate.Scope == ScopeRuntime || candidate.Scope == ScopeOptional), scoreAddedDirectRuntime, DriverAddedDirectRuntime)
-	add(candidate.ChangeType == ChangeAdded && candidate.Direct && candidate.Scope == ScopeDev, scoreAddedDirectDev, DriverAddedDirectDev)
-	add(isMajorBump(candidate.FromVersion, candidate.ToVersion, candidate.FromRequirement, candidate.ToRequirement), scoreMajorVersionBump, DriverMajorVersionBump)
-
-	if published, ok := publishedAt[PackageVersion{Name: candidate.Name, Version: candidate.ToVersion}]; ok && !published.IsZero() {
-		add(input.Now.Sub(published) <= recentPublishWindow, scoreRecentlyPublished, DriverRecentlyPublished)
+// result returns the capped score, the signal names and the breakdown.
+func (s *scoreSheet) result() (int, []string, []ScorePart) {
+	score := 0
+	drivers := make([]string, 0, len(s.parts))
+	for _, part := range s.parts {
+		score += part.Points
+		drivers = append(drivers, part.Signal)
 	}
-
-	add(candidate.HeadPackage.HasInstallScript, scoreInstallScript, DriverInstallScript)
-	add(len(candidate.HeadPackage.OS) > 0 || len(candidate.HeadPackage.CPU) > 0, scorePlatformRestricted, DriverPlatformRestricted)
-	add(views.AddedTransitive >= transitiveCountThreshold5, scoreTransitiveFive, DriverTransitiveFive)
-	add(views.AddedTransitive >= transitiveCountThreshold15, scoreTransitiveFifteen, DriverTransitiveFifteen)
-
 	if score > changeScoreCap {
 		score = changeScoreCap
 	}
-	return score, uniqueStrings(drivers)
+	parts := append([]ScorePart{}, s.parts...)
+	return score, drivers, parts
+}
+
+func scoreChange(input Input, candidate candidateSummary, views targetLockViews, publishedAt map[PackageVersion]time.Time) (int, []string, []ScorePart) {
+	var sheet scoreSheet
+	addedDirect := candidate.ChangeType == ChangeAdded && candidate.Direct
+	updated := candidate.ChangeType == ChangeUpdated
+
+	sheet.add(len(candidate.Vulnerabilities) > 0, scoreKnownVulnerabilities, DriverKnownVulnerabilities)
+	sheet.add(addedDirect && SimilarPopularPackage(candidate.Name) != "", scoreNameSimilarToPopular, DriverNameSimilarToPopular)
+	sheet.add(addedDirect && (candidate.Scope == ScopeRuntime || candidate.Scope == ScopeOptional), scoreAddedDirectRuntime, DriverAddedDirectRuntime)
+	sheet.add(addedDirect && candidate.Scope == ScopeDev, scoreAddedDirectDev, DriverAddedDirectDev)
+	sheet.add(isMajorBump(candidate.FromVersion, candidate.ToVersion, candidate.FromRequirement, candidate.ToRequirement), scoreMajorVersionBump, DriverMajorVersionBump)
+
+	key := PackageVersion{Name: candidate.Name, Version: candidate.ToVersion}
+	if published, ok := publishedAt[key]; ok && !published.IsZero() {
+		sheet.add(input.Now.Sub(published) <= recentPublishWindow, scoreRecentlyPublished, DriverRecentlyPublished)
+	}
+	if facts, ok := input.Facts[key]; ok {
+		sheet.add(candidate.ChangeType == ChangeAdded && !facts.PackageCreated.IsZero() && input.Now.Sub(facts.PackageCreated) <= newPackageWindow, scoreNewPackage, DriverNewPackage)
+		sheet.add(updated && facts.HasPrevious && facts.PreviousProvenance && !facts.Provenance, scoreProvenanceDropped, DriverProvenanceDropped)
+		sheet.add(updated && facts.HasPrevious && facts.Publisher != "" && facts.PreviousPublisher != "" && facts.Publisher != facts.PreviousPublisher, scorePublisherChanged, DriverPublisherChanged)
+	}
+
+	sheet.add(candidate.HeadPackage.HasInstallScript, scoreInstallScript, DriverInstallScript)
+	sheet.add(len(candidate.HeadPackage.OS) > 0 || len(candidate.HeadPackage.CPU) > 0, scorePlatformRestricted, DriverPlatformRestricted)
+	sheet.add(views.AddedTransitive >= transitiveCountThreshold5, scoreTransitiveFive, DriverTransitiveFive)
+	sheet.add(views.AddedTransitive >= transitiveCountThreshold15, scoreTransitiveFifteen, DriverTransitiveFifteen)
+	return sheet.result()
 }
 
 func aggregateScore(changes []DependencyChange) int {

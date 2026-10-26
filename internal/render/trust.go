@@ -70,6 +70,9 @@ func explainChangeRisk(change analysis.DependencyChange, multiTarget bool, lang 
 		return ""
 	}
 	subject := riskSubject(change, multiTarget)
+	if lang != "en" {
+		return fmt.Sprintf("%s: %s.", subject, strings.Join(phrases, ". "))
+	}
 	if len(phrases) == 1 {
 		return fmt.Sprintf("%s %s.", subject, phrases[0])
 	}
@@ -104,6 +107,14 @@ func riskPhraseForDriver(driver, lang string) string {
 			return "pulls in 15 or more new transitive packages"
 		case analysis.DriverTransitiveFive:
 			return "pulls in at least 5 new transitive packages"
+		case analysis.DriverNameSimilarToPopular:
+			return "has a name one edit away from a popular package"
+		case analysis.DriverNewPackage:
+			return "was first published less than 30 days ago"
+		case analysis.DriverPublisherChanged:
+			return "was published by a different npm account than the previous version"
+		case analysis.DriverProvenanceDropped:
+			return "lost the provenance attestation the previous version had"
 		default:
 			return ""
 		}
@@ -128,6 +139,14 @@ func riskPhraseForDriver(driver, lang string) string {
 		return "새 전이 의존성을 15개 이상 끌어옵니다"
 	case analysis.DriverTransitiveFive:
 		return "새 전이 의존성을 5개 이상 끌어옵니다"
+	case analysis.DriverNameSimilarToPopular:
+		return "인기 패키지와 이름이 한 글자만 다릅니다"
+	case analysis.DriverNewPackage:
+		return "처음 배포된 지 30일이 안 됐습니다"
+	case analysis.DriverPublisherChanged:
+		return "이전 버전과 다른 npm 계정이 배포했습니다"
+	case analysis.DriverProvenanceDropped:
+		return "이전 버전에 있던 provenance 증명이 없습니다"
 	default:
 		return ""
 	}
@@ -156,8 +175,15 @@ func explainRecommendedAction(action string, report Report, lang string) string 
 			return fmt.Sprintf("Check release notes and migration guidance for %s before merging.", joinList(limitNames(names)))
 		}
 	case analysis.ActionRunTargetedTests:
+		if files := importingFiles(report.Analysis.ChangedDependencies); len(files) > 0 {
+			return fmt.Sprintf("Run the tests that cover %s, which import the changed packages.", fileList(files, lang))
+		}
 		if targets := targetNames(report.Analysis); len(targets) > 0 {
 			return fmt.Sprintf("Run targeted smoke checks for %s and the code paths that import the changed packages.", joinList(limitNames(targets)))
+		}
+	case analysis.ActionVerifyPackage:
+		if names := packageNamesForDrivers(report.Analysis.ChangedDependencies, packageIdentityDrivers...); len(names) > 0 {
+			return fmt.Sprintf("Confirm that %s %s the package you meant and comes from its usual maintainers.", joinList(limitNames(names)), isOrAre(len(names)))
 		}
 	case analysis.ActionValidateSources:
 		if names := nonRegistryDependencies(report.Analysis.Notes); len(names) > 0 {
@@ -187,8 +213,15 @@ func explainRecommendedActionNonEnglish(action string, report Report, lang strin
 			return fmt.Sprintf("%s 패키지: %s.", base, strings.Join(limitNames(names), ", "))
 		}
 	case analysis.ActionRunTargetedTests:
+		if files := importingFiles(report.Analysis.ChangedDependencies); len(files) > 0 {
+			return fmt.Sprintf("변경된 패키지를 가져다 쓰는 %s의 테스트를 실행하세요.", fileList(files, lang))
+		}
 		if targets := targetNames(report.Analysis); len(targets) > 0 {
 			return fmt.Sprintf("%s 대상: %s.", base, strings.Join(limitNames(targets), ", "))
+		}
+	case analysis.ActionVerifyPackage:
+		if names := packageNamesForDrivers(report.Analysis.ChangedDependencies, packageIdentityDrivers...); len(names) > 0 {
+			return fmt.Sprintf("%s 패키지: %s.", base, strings.Join(limitNames(names), ", "))
 		}
 	case analysis.ActionValidateSources:
 		if names := nonRegistryDependencies(report.Analysis.Notes); len(names) > 0 {
@@ -213,6 +246,53 @@ func packageNamesForDriver(changes []analysis.DependencyChange, driver string) [
 	}
 	sort.Strings(names)
 	return names
+}
+
+var packageIdentityDrivers = []string{
+	analysis.DriverNameSimilarToPopular,
+	analysis.DriverNewPackage,
+	analysis.DriverPublisherChanged,
+	analysis.DriverProvenanceDropped,
+}
+
+func packageNamesForDrivers(changes []analysis.DependencyChange, drivers ...string) []string {
+	seen := map[string]struct{}{}
+	names := make([]string, 0)
+	for _, driver := range drivers {
+		for _, name := range packageNamesForDriver(changes, driver) {
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// importingFiles lists the files that import any changed package, in order
+// of the riskiest change first.
+func importingFiles(changes []analysis.DependencyChange) []string {
+	seen := map[string]struct{}{}
+	files := make([]string, 0)
+	for _, change := range changes {
+		for _, file := range change.ImportedBy {
+			if _, ok := seen[file]; ok {
+				continue
+			}
+			seen[file] = struct{}{}
+			files = append(files, file)
+		}
+	}
+	return files
+}
+
+func isOrAre(count int) string {
+	if count == 1 {
+		return "is"
+	}
+	return "are"
 }
 
 func targetNames(result analysis.AnalysisResult) []string {

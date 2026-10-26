@@ -36,6 +36,10 @@ func translator(lang string) func(string) string {
 				return "권장 조치"
 			case "quick_commands":
 				return "빠른 확인 명령"
+			case "check_first":
+				return "먼저 확인할 것"
+			case "imported_by":
+				return "가져다 쓰는 파일"
 			default:
 				return key
 			}
@@ -68,6 +72,10 @@ func translator(lang string) func(string) string {
 			return "Recommended actions"
 		case "quick_commands":
 			return "Quick commands"
+		case "check_first":
+			return "Check first"
+		case "imported_by":
+			return "Imported by"
 		default:
 			return key
 		}
@@ -97,6 +105,14 @@ func localizeDrivers(drivers []string, lang string) []string {
 				items = append(items, "The PR adds at least 5 new transitive packages.")
 			case analysis.DriverTransitiveFifteen:
 				items = append(items, "The PR adds at least 15 new transitive packages.")
+			case analysis.DriverNameSimilarToPopular:
+				items = append(items, "The name is one edit away from a popular package.")
+			case analysis.DriverNewPackage:
+				items = append(items, "The package was first published less than 30 days ago.")
+			case analysis.DriverPublisherChanged:
+				items = append(items, "A different npm account published this version than the previous one.")
+			case analysis.DriverProvenanceDropped:
+				items = append(items, "The previous version had a provenance attestation and this one does not.")
 			default:
 				items = append(items, driver)
 			}
@@ -122,6 +138,14 @@ func localizeDrivers(drivers []string, lang string) []string {
 			items = append(items, "새 전이 의존성이 5개 이상 추가되었습니다.")
 		case analysis.DriverTransitiveFifteen:
 			items = append(items, "새 전이 의존성이 15개 이상 추가되었습니다.")
+		case analysis.DriverNameSimilarToPopular:
+			items = append(items, "이름이 인기 패키지와 한 글자만 다릅니다.")
+		case analysis.DriverNewPackage:
+			items = append(items, "처음 배포된 지 30일이 안 된 패키지입니다.")
+		case analysis.DriverPublisherChanged:
+			items = append(items, "이전 버전과 다른 npm 계정이 이 버전을 배포했습니다.")
+		case analysis.DriverProvenanceDropped:
+			items = append(items, "이전 버전에는 provenance 증명이 있었는데 이 버전에는 없습니다.")
 		default:
 			items = append(items, driver)
 		}
@@ -144,6 +168,8 @@ func localizeAction(action, lang string) string {
 			return "Run targeted tests and smoke checks for affected paths."
 		case analysis.ActionValidateSources:
 			return "Validate non-registry or git sources explicitly."
+		case analysis.ActionVerifyPackage:
+			return "Confirm each flagged package is the one you meant and comes from its usual maintainers."
 		default:
 			return action
 		}
@@ -162,6 +188,8 @@ func localizeAction(action, lang string) string {
 		return "영향 경로에 대한 타깃 테스트와 스모크 체크를 실행하세요."
 	case analysis.ActionValidateSources:
 		return "비레지스트리 또는 git 소스를 별도로 검증하세요."
+	case analysis.ActionVerifyPackage:
+		return "표시된 패키지가 의도한 패키지인지, 평소 관리자가 배포했는지 확인하세요."
 	default:
 		return action
 	}
@@ -293,6 +321,9 @@ func localizeBunNoteKorean(note analysis.Note) (string, bool) {
 
 func localizeSummaryCount(changeCount int, lang string) string {
 	if lang == "en" {
+		if changeCount == 1 {
+			return "1 dependency change was detected."
+		}
 		return fmt.Sprintf("%d dependency changes were detected.", changeCount)
 	}
 	return fmt.Sprintf("의존성 변경 %d건이 감지되었습니다.", changeCount)
@@ -361,6 +392,14 @@ func localizeDriverLabel(driver, lang string) string {
 			return "5+ transitive additions"
 		case analysis.DriverTransitiveFifteen:
 			return "15+ transitive additions"
+		case analysis.DriverNameSimilarToPopular:
+			return "name like a popular package"
+		case analysis.DriverNewPackage:
+			return "new package"
+		case analysis.DriverPublisherChanged:
+			return "different publisher"
+		case analysis.DriverProvenanceDropped:
+			return "provenance dropped"
 		default:
 			return driver
 		}
@@ -385,6 +424,14 @@ func localizeDriverLabel(driver, lang string) string {
 		return "전이 의존성 5+"
 	case analysis.DriverTransitiveFifteen:
 		return "전이 의존성 15+"
+	case analysis.DriverNameSimilarToPopular:
+		return "인기 패키지와 비슷한 이름"
+	case analysis.DriverNewPackage:
+		return "새 패키지"
+	case analysis.DriverPublisherChanged:
+		return "배포 계정 변경"
+	case analysis.DriverProvenanceDropped:
+		return "provenance 없음"
 	default:
 		return driver
 	}

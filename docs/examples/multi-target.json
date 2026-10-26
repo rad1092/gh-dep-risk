@@ -9,52 +9,91 @@
     "head_sha": "head-workspace",
     "author_login": "octocat"
   },
-  "score": 52,
-  "level": "high",
+  "score": 29,
+  "level": "medium",
   "blast_radius": "medium",
   "dependency_review_available": true,
   "summary": [
     "2 dependency changes were detected.",
     "2 dependency targets were analyzed.",
-    "Top risk signals: direct runtime addition."
+    "Top risk signals: major version bump, recently published version, direct runtime addition."
+  ],
+  "check_first": [
+    "react-router-dom@7.1.0 was published in the last 7 days. If the update isn't urgent, wait a few days before merging.",
+    "react-router-dom moves from 6.26.0 to 7.1.0. Read the release notes for breaking changes. It is used in `apps/web/src/App.tsx`, `apps/web/src/routes.tsx` and 1 more.",
+    "tailwind-merge is a new dependency. Check that it is the package you meant: `npm view tailwind-merge repository.url`"
   ],
   "risk_drivers": [
+    "major_version_bump",
+    "recently_published",
     "added_direct_runtime_dependency"
   ],
   "recommended_actions": [
+    "review_release_notes",
     "run_targeted_tests"
   ],
   "quick_commands": [
     "cd apps/web \u0026\u0026 npm ls --all",
-    "cd apps/web \u0026\u0026 npm ls axios",
-    "cd packages/ui \u0026\u0026 npm ls --all"
+    "cd apps/web \u0026\u0026 npm ls react-router-dom",
+    "cd apps/web \u0026\u0026 npm view react-router-dom@7.1.0 time --json",
+    "cd packages/ui \u0026\u0026 npm ls --all",
+    "cd packages/ui \u0026\u0026 npm ls tailwind-merge",
+    "cd packages/ui \u0026\u0026 npm view tailwind-merge@2.3.0 time --json"
   ],
   "changes": [
     {
-      "name": "axios",
+      "name": "react-router-dom",
+      "manifest": "package-lock.json",
       "target": "apps/web",
-      "change_type": "added",
+      "change_type": "updated",
       "scope": "runtime",
       "direct": true,
-      "to_version": "1.7.0",
-      "score": 48,
-      "level": "high",
+      "from_version": "6.26.0",
+      "to_version": "7.1.0",
+      "from_requirement": "^6.26.0",
+      "to_requirement": "^7.1.0",
+      "score": 28,
+      "level": "medium",
       "risk_drivers": [
-        "added_direct_runtime_dependency"
+        "major_version_bump",
+        "recently_published"
       ],
-      "added_transitive_count": 0
+      "score_breakdown": [
+        {
+          "signal": "major_version_bump",
+          "points": 10
+        },
+        {
+          "signal": "recently_published",
+          "points": 18
+        }
+      ],
+      "added_transitive_count": 0,
+      "imported_by": [
+        "apps/web/src/App.tsx",
+        "apps/web/src/routes.tsx",
+        "apps/web/src/pages/Settings.tsx"
+      ]
     },
     {
       "name": "tailwind-merge",
+      "manifest": "package-lock.json",
       "target": "packages/ui",
       "change_type": "added",
       "scope": "runtime",
       "direct": true,
       "to_version": "2.3.0",
-      "score": 22,
-      "level": "medium",
+      "to_requirement": "^2.3.0",
+      "score": 12,
+      "level": "low",
       "risk_drivers": [
         "added_direct_runtime_dependency"
+      ],
+      "score_breakdown": [
+        {
+          "signal": "added_direct_runtime_dependency",
+          "points": 12
+        }
       ],
       "added_transitive_count": 0
     }
@@ -68,34 +107,57 @@
         "kind": "workspace"
       },
       "dependency_review_available": true,
-      "score": 48,
-      "level": "high",
+      "score": 28,
+      "level": "medium",
       "blast_radius": "medium",
       "changed_dependencies": [
         {
-          "name": "axios",
+          "name": "react-router-dom",
+          "manifest": "package-lock.json",
           "target": "apps/web",
-          "change_type": "added",
+          "change_type": "updated",
           "scope": "runtime",
           "direct": true,
-          "to_version": "1.7.0",
-          "score": 48,
-          "level": "high",
+          "from_version": "6.26.0",
+          "to_version": "7.1.0",
+          "from_requirement": "^6.26.0",
+          "to_requirement": "^7.1.0",
+          "score": 28,
+          "level": "medium",
           "risk_drivers": [
-            "added_direct_runtime_dependency"
+            "major_version_bump",
+            "recently_published"
           ],
-          "added_transitive_count": 0
+          "score_breakdown": [
+            {
+              "signal": "major_version_bump",
+              "points": 10
+            },
+            {
+              "signal": "recently_published",
+              "points": 18
+            }
+          ],
+          "added_transitive_count": 0,
+          "imported_by": [
+            "apps/web/src/App.tsx",
+            "apps/web/src/routes.tsx",
+            "apps/web/src/pages/Settings.tsx"
+          ]
         }
       ],
       "risk_drivers": [
-        "added_direct_runtime_dependency"
+        "major_version_bump",
+        "recently_published"
       ],
       "recommended_actions": [
+        "review_release_notes",
         "run_targeted_tests"
       ],
       "quick_commands": [
         "cd apps/web \u0026\u0026 npm ls --all",
-        "cd apps/web \u0026\u0026 npm ls axios"
+        "cd apps/web \u0026\u0026 npm ls react-router-dom",
+        "cd apps/web \u0026\u0026 npm view react-router-dom@7.1.0 time --json"
       ],
       "added_transitive_count": 0
     },
@@ -107,21 +169,29 @@
         "kind": "workspace"
       },
       "dependency_review_available": true,
-      "score": 22,
-      "level": "medium",
-      "blast_radius": "low",
+      "score": 12,
+      "level": "low",
+      "blast_radius": "medium",
       "changed_dependencies": [
         {
           "name": "tailwind-merge",
+          "manifest": "package-lock.json",
           "target": "packages/ui",
           "change_type": "added",
           "scope": "runtime",
           "direct": true,
           "to_version": "2.3.0",
-          "score": 22,
-          "level": "medium",
+          "to_requirement": "^2.3.0",
+          "score": 12,
+          "level": "low",
           "risk_drivers": [
             "added_direct_runtime_dependency"
+          ],
+          "score_breakdown": [
+            {
+              "signal": "added_direct_runtime_dependency",
+              "points": 12
+            }
           ],
           "added_transitive_count": 0
         }
@@ -133,7 +203,9 @@
         "run_targeted_tests"
       ],
       "quick_commands": [
-        "cd packages/ui \u0026\u0026 npm ls --all"
+        "cd packages/ui \u0026\u0026 npm ls --all",
+        "cd packages/ui \u0026\u0026 npm ls tailwind-merge",
+        "cd packages/ui \u0026\u0026 npm view tailwind-merge@2.3.0 time --json"
       ],
       "added_transitive_count": 0
     }

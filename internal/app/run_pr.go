@@ -36,8 +36,10 @@ type RunPROptions struct {
 type RunPRDependencies struct {
 	GitHub   ghclient.Client
 	Registry npm.RegistryClient
-	Stdout   io.Writer
-	Stderr   io.Writer
+	// Imports finds the files that import a changed package. Nil skips it.
+	Imports ImportFinder
+	Stdout  io.Writer
+	Stderr  io.Writer
 }
 
 type ExitError struct {
@@ -164,13 +166,9 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 
 	publishedAt := map[analysis.PackageVersion]time.Time{}
 	if !opts.NoRegistry && deps.Registry != nil {
-		registryTargets := collectRegistryTargets(inputs)
-		for _, target := range registryTargets {
-			published, err := deps.Registry.PublishedAt(ctx, target.Name, target.Version)
-			if err != nil {
-				continue
-			}
-			publishedAt[target] = published
+		facts := lookupRegistryFacts(ctx, deps.Registry, inputs, publishedAt)
+		for i := range inputs {
+			inputs[i].Facts = facts
 		}
 	}
 
@@ -193,6 +191,7 @@ func RunPR(ctx context.Context, deps RunPRDependencies, opts RunPROptions) error
 		}
 		targetResults = append(targetResults, analysis.TargetResult(input.Target, result))
 	}
+	addImportedBy(ctx, deps.Imports, targetResults, pr.BaseSHA, pr.HeadSHA)
 	if len(targetResults) == 0 {
 		if unsupportedOnly {
 			fmt.Fprintln(deps.Stderr, "unsupported dependency entries were present, but no supported dependency change was found")
@@ -310,6 +309,64 @@ func parsePRArg(arg string) (ghclient.Repo, int, bool, error) {
 		Owner: parts[0],
 		Name:  parts[1],
 	}, number, true, nil
+}
+
+// lookupRegistryFacts asks the registry about every version the PR moves to.
+// Publish times go into publishedAt; clients that report more facts also
+// fill the returned map. Lookup failures are skipped.
+func lookupRegistryFacts(ctx context.Context, registry npm.RegistryClient, inputs []analysis.Input, publishedAt map[analysis.PackageVersion]time.Time) map[analysis.PackageVersion]npm.VersionFacts {
+	factsClient, hasFacts := registry.(npm.FactsClient)
+	if !hasFacts {
+		for _, target := range collectRegistryTargets(inputs) {
+			published, err := registry.PublishedAt(ctx, target.Name, target.Version)
+			if err != nil {
+				continue
+			}
+			publishedAt[target] = published
+		}
+		return nil
+	}
+	facts := map[analysis.PackageVersion]npm.VersionFacts{}
+	for _, lookup := range collectRegistryLookups(inputs) {
+		key := analysis.PackageVersion{Name: lookup.Name, Version: lookup.Version}
+		if existing, ok := facts[key]; ok && (existing.HasPrevious || lookup.PreviousVersion == "") {
+			continue
+		}
+		found, err := factsClient.VersionFacts(ctx, lookup.Name, lookup.Version, lookup.PreviousVersion)
+		if err != nil {
+			continue
+		}
+		facts[key] = found
+		if !found.Published.IsZero() {
+			publishedAt[key] = found.Published
+		}
+	}
+	return facts
+}
+
+func collectRegistryLookups(inputs []analysis.Input) []analysis.RegistryLookup {
+	seen := map[analysis.RegistryLookup]struct{}{}
+	lookups := make([]analysis.RegistryLookup, 0)
+	for _, input := range inputs {
+		for _, lookup := range analysis.CollectRegistryLookups(input) {
+			if _, ok := seen[lookup]; ok {
+				continue
+			}
+			seen[lookup] = struct{}{}
+			lookups = append(lookups, lookup)
+		}
+	}
+	sort.Slice(lookups, func(i, j int) bool {
+		if lookups[i].Name != lookups[j].Name {
+			return lookups[i].Name < lookups[j].Name
+		}
+		if lookups[i].Version != lookups[j].Version {
+			return lookups[i].Version < lookups[j].Version
+		}
+		// Updates first, so the facts kept for a version include the previous one.
+		return lookups[i].PreviousVersion > lookups[j].PreviousVersion
+	})
+	return lookups
 }
 
 func collectRegistryTargets(inputs []analysis.Input) []analysis.PackageVersion {

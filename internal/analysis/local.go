@@ -45,7 +45,7 @@ func AnalyzeLocalDirectDependencies(input LocalInput) AnalysisResult {
 		}
 
 		change := localDependencyChange(input.Target, before, beforeOK, after, afterOK)
-		change.Score, change.RiskDrivers = scoreLocalDependencyChange(change)
+		change.Score, change.RiskDrivers, change.ScoreBreakdown = scoreLocalDependencyChange(input.Target, change)
 		change.Level = LevelForScore(change.Score)
 		if afterOK && after.Source != "" {
 			notes = append(notes, Note{
@@ -171,25 +171,22 @@ func localDependencyDirect(dependency LocalDependency) bool {
 	return normalizeLocalScope(dependency.Scope) != ScopeTransitive
 }
 
-func scoreLocalDependencyChange(change DependencyChange) (int, []string) {
-	score := 0
-	drivers := make([]string, 0, 2)
-	add := func(condition bool, points int, driver string) {
-		if !condition {
-			return
-		}
-		score += points
-		drivers = append(drivers, driver)
-	}
+func scoreLocalDependencyChange(target AnalysisTarget, change DependencyChange) (int, []string, []ScorePart) {
+	var sheet scoreSheet
+	addedDirect := change.ChangeType == ChangeAdded && change.Direct
+	sheet.add(addedDirect && isNPMFamily(target) && SimilarPopularPackage(change.Name) != "", scoreNameSimilarToPopular, DriverNameSimilarToPopular)
+	sheet.add(addedDirect && (change.Scope == ScopeRuntime || change.Scope == ScopeOptional), scoreAddedDirectRuntime, DriverAddedDirectRuntime)
+	sheet.add(addedDirect && change.Scope == ScopeDev, scoreAddedDirectDev, DriverAddedDirectDev)
+	sheet.add(change.Direct && isMajorBump(change.FromVersion, change.ToVersion, change.FromRequirement, change.ToRequirement), scoreMajorVersionBump, DriverMajorVersionBump)
+	return sheet.result()
+}
 
-	add(change.ChangeType == ChangeAdded && change.Direct && (change.Scope == ScopeRuntime || change.Scope == ScopeOptional), scoreAddedDirectRuntime, DriverAddedDirectRuntime)
-	add(change.ChangeType == ChangeAdded && change.Direct && change.Scope == ScopeDev, scoreAddedDirectDev, DriverAddedDirectDev)
-	add(change.Direct && isMajorBump(change.FromVersion, change.ToVersion, change.FromRequirement, change.ToRequirement), scoreMajorVersionBump, DriverMajorVersionBump)
-
-	if score > changeScoreCap {
-		score = changeScoreCap
+func isNPMFamily(target AnalysisTarget) bool {
+	switch target.PackageManager {
+	case "npm", "pnpm", "yarn", "bun":
+		return true
 	}
-	return score, uniqueStrings(drivers)
+	return target.Ecosystem == "npm"
 }
 
 func summarizeUnsupportedEntries(entries []LocalUnsupportedEntry) string {

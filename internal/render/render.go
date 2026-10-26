@@ -32,6 +32,7 @@ type JSONReport struct {
 	BlastRadius               analysis.BlastRadius            `json:"blast_radius"`
 	DependencyReviewAvailable bool                            `json:"dependency_review_available"`
 	Summary                   []string                        `json:"summary"`
+	CheckFirst                []string                        `json:"check_first"`
 	RiskDrivers               []string                        `json:"risk_drivers"`
 	RecommendedActions        []string                        `json:"recommended_actions"`
 	QuickCommands             []string                        `json:"quick_commands"`
@@ -66,6 +67,7 @@ func toJSONReport(report Report, lang string) JSONReport {
 		BlastRadius:               report.Analysis.BlastRadius,
 		DependencyReviewAvailable: report.Analysis.DependencyReviewAvailable,
 		Summary:                   summaryBullets(report, lang),
+		CheckFirst:                checkFirstLines(report, lang),
 		RiskDrivers:               append([]string(nil), report.Analysis.RiskDrivers...),
 		RecommendedActions:        append([]string(nil), report.Analysis.RecommendedActions...),
 		QuickCommands:             append([]string(nil), report.Analysis.QuickCommands...),

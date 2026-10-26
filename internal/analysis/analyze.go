@@ -57,11 +57,12 @@ func Analyze(input Input, publishedAt map[PackageVersion]time.Time) AnalysisResu
 			AddedTransitiveCount: views.AddedTransitive,
 		}
 
-		score, drivers := scoreChange(input, candidate, views, publishedAt)
+		score, drivers, parts := scoreChange(input, candidate, views, publishedAt)
 
 		change.Score = score
 		change.Level = LevelForScore(score)
-		change.RiskDrivers = uniqueStrings(drivers)
+		change.RiskDrivers = drivers
+		change.ScoreBreakdown = parts
 		if candidate.Resolved != "" && !npm.IsRegistrySource(candidate.Resolved) {
 			notes = append(notes, Note{
 				Code:       NoteNonRegistrySource,
@@ -529,6 +530,8 @@ func recommendedActions(changes []DependencyChange, notes []Note) []string {
 				set[ActionRunTargetedTests] = struct{}{}
 			case DriverTransitiveFive, DriverTransitiveFifteen:
 				set[ActionInspectTree] = struct{}{}
+			case DriverNameSimilarToPopular, DriverNewPackage, DriverPublisherChanged, DriverProvenanceDropped:
+				set[ActionVerifyPackage] = struct{}{}
 			default:
 				if change.Direct {
 					set[ActionRunTargetedTests] = struct{}{}

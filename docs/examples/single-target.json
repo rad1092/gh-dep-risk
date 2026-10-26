@@ -14,20 +14,29 @@
   "blast_radius": "medium",
   "dependency_review_available": false,
   "summary": [
-    "1 dependency changes were detected.",
+    "1 dependency change was detected.",
     "Dependency Review was unavailable, so local fallback analysis was used.",
-    "Top risk signals: major version bump, install script."
+    "Top risk signals: install script, major version bump, recently published version."
+  ],
+  "check_first": [
+    "left-pad@2.0.0 runs a script when it is installed. Read it before installing: `npm view left-pad@2.0.0 scripts`",
+    "left-pad@2.0.0 was published in the last 7 days. If the update isn't urgent, wait a few days before merging.",
+    "left-pad moves from 1.0.0 to 2.0.0. Read the release notes for breaking changes."
   ],
   "risk_drivers": [
+    "install_script_detected",
     "major_version_bump",
-    "install_script_detected"
+    "recently_published"
   ],
   "recommended_actions": [
     "inspect_install_scripts",
-    "review_release_notes"
+    "review_release_notes",
+    "run_targeted_tests"
   ],
   "quick_commands": [
-    "npm ls left-pad"
+    "npm ls --all",
+    "npm ls left-pad",
+    "npm view left-pad@2.0.0 time --json"
   ],
   "notes": [
     {
@@ -37,17 +46,36 @@
   "changes": [
     {
       "name": "left-pad",
+      "manifest": "package.json",
       "target": "root",
       "change_type": "updated",
       "scope": "runtime",
       "direct": true,
       "from_version": "1.0.0",
       "to_version": "2.0.0",
+      "from_requirement": "^1.0.0",
+      "to_requirement": "^2.0.0",
+      "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-2.0.0.tgz",
       "score": 48,
       "level": "high",
       "risk_drivers": [
         "major_version_bump",
+        "recently_published",
         "install_script_detected"
+      ],
+      "score_breakdown": [
+        {
+          "signal": "major_version_bump",
+          "points": 10
+        },
+        {
+          "signal": "recently_published",
+          "points": 18
+        },
+        {
+          "signal": "install_script_detected",
+          "points": 20
+        }
       ],
       "added_transitive_count": 0
     }
@@ -67,31 +95,54 @@
       "changed_dependencies": [
         {
           "name": "left-pad",
+          "manifest": "package.json",
           "target": "root",
           "change_type": "updated",
           "scope": "runtime",
           "direct": true,
           "from_version": "1.0.0",
           "to_version": "2.0.0",
+          "from_requirement": "^1.0.0",
+          "to_requirement": "^2.0.0",
+          "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-2.0.0.tgz",
           "score": 48,
           "level": "high",
           "risk_drivers": [
             "major_version_bump",
+            "recently_published",
             "install_script_detected"
+          ],
+          "score_breakdown": [
+            {
+              "signal": "major_version_bump",
+              "points": 10
+            },
+            {
+              "signal": "recently_published",
+              "points": 18
+            },
+            {
+              "signal": "install_script_detected",
+              "points": 20
+            }
           ],
           "added_transitive_count": 0
         }
       ],
       "risk_drivers": [
+        "install_script_detected",
         "major_version_bump",
-        "install_script_detected"
+        "recently_published"
       ],
       "recommended_actions": [
         "inspect_install_scripts",
-        "review_release_notes"
+        "review_release_notes",
+        "run_targeted_tests"
       ],
       "quick_commands": [
-        "npm ls left-pad"
+        "npm ls --all",
+        "npm ls left-pad",
+        "npm view left-pad@2.0.0 time --json"
       ],
       "notes": [
         {

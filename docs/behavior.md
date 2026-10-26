@@ -48,30 +48,61 @@ gh dep-risk pr 123 --list-targets
 
 ## Scoring
 
-The score model is heuristic, deterministic, and intentionally auditable.
+Each dependency change gets points for every signal that applies. The
+report shows the points next to each change, so a score can always be added
+up by hand.
 
-- each dependency change is scored from named risk drivers with fixed weights
-- the overall PR score is the highest single-change score plus a small capped
-  bonus for additional risky changes
-- the report keeps the main risk driver explainable instead of hiding it in an
-  opaque sum
+| Signal | Points | When |
+| --- | ---: | --- |
+| Known vulnerabilities | 35 | Dependency Review reports an advisory for the new version |
+| Name like a popular package | 20 | A new direct npm package is one edit away from a widely used one, for example `lodahs` or `crossenv` |
+| Provenance dropped | 20 | The previous version had an npm provenance attestation and the new one does not |
+| Install script | 20 | The lockfile says the package runs an install script |
+| Recently published | 18 | The new version is less than 7 days old |
+| New package | 15 | A newly added package was first published less than 30 days ago |
+| 5+ new transitive packages | 12 | The target gains at least 5 packages it did not add directly |
+| New direct runtime dependency | 12 | Added to `dependencies` or `optionalDependencies` |
+| Major version bump | 10 | The major version goes up |
+| Different publisher | 10 | Another npm account published the new version than the previous one |
+| 15+ new transitive packages | 8 | On top of the 5+ points |
+| New direct dev dependency | 6 | Added to `devDependencies` |
+| Platform restriction | 6 | The package only installs on some OS or CPU targets |
 
-Risk levels are `low`, `medium`, `high`, and `critical`.
+A change's score is capped at 100. The PR score is the highest change score
+plus a bonus for the other changes: 4 for each other change scored 20 or
+more, 1 for each other change above 0, at most 15. The score line says how
+much came from where, for example `29 (medium), 28 from apps/web /
+react-router-dom + 1 for the other changes`.
+
+Levels: `low` below 20, `medium` from 20, `high` from 40, `critical` from 70.
+
+## Check First
+
+Every report starts with up to three concrete checks, riskiest change first,
+such as reading an install script with `npm view <package>@<version> scripts`
+or reading a major version's release notes. When `gh dep-risk` runs inside a
+clone of the repository that has the PR's commits, it also names the files
+that import each changed npm package (found with `git grep`, nothing is
+fetched) and points the test advice at them.
 
 ## Registry Lookups
 
-npm-compatible registry publish-age lookups are best effort and limited to npm,
-pnpm, and Yarn-style registry packages. They are skipped with `--no-registry`.
+For npm, pnpm and Yarn lockfile targets, `gh dep-risk` reads each new
+version's metadata from the npm registry: its publish date, when the package
+was first published, which account published it, and whether it has a
+provenance attestation. Lookups are best effort and skipped with
+`--no-registry`.
 
 Python, Go, Poetry, uv, and Bun local fallback do not perform PyPI, Go module
-proxy, or Bun registry publish-age lookups.
+proxy, or Bun registry lookups.
 
 ## Output Formats
 
 - `human`: concise reviewer-oriented summary
 - `json`: machine-readable report with repo, PR metadata, score, level, blast
-  radius, dependency review availability, summary bullets, recommended actions,
-  notes, changes, and per-target detail
+  radius, dependency review availability, summary bullets, `check_first`,
+  recommended actions, notes, changes with their `score_breakdown`, and
+  per-target detail
 - `markdown`: comment-ready output that starts with `<!-- gh-dep-risk -->`
 
 `--bundle-dir` writes:
