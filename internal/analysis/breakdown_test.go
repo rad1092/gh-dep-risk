@@ -128,8 +128,8 @@ func TestRegistryFactsSignals(t *testing.T) {
 		lockfile(pkg("node_modules/widget", "widget", "1.0.1", nil)),
 		nil,
 	)
-	update.Facts = map[PackageVersion]npm.VersionFacts{
-		{Name: "widget", Version: "1.0.1"}: {
+	update.Facts = map[RegistryLookup]npm.VersionFacts{
+		{Name: "widget", Version: "1.0.1", PreviousVersion: "1.0.0"}: {
 			PackageCreated:     now.AddDate(-3, 0, 0),
 			Publisher:          "mallory",
 			HasPrevious:        true,
@@ -155,7 +155,7 @@ func TestRegistryFactsSignals(t *testing.T) {
 		lockfile(pkg("node_modules/fresh-thing", "fresh-thing", "0.1.0", nil)),
 		nil,
 	)
-	added.Facts = map[PackageVersion]npm.VersionFacts{
+	added.Facts = map[RegistryLookup]npm.VersionFacts{
 		{Name: "fresh-thing", Version: "0.1.0"}: {PackageCreated: now.AddDate(0, 0, -3), Publisher: "someone"},
 	}
 	change = Analyze(added, nil).ChangedDependencies[0]

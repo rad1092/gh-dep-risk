@@ -146,13 +146,57 @@ func TestLookupRegistryFactsUsesOneLookupPerVersion(t *testing.T) {
 	if want := []string{"widget@1.0.1<1.0.0"}; !reflect.DeepEqual(registry.lookups, want) {
 		t.Fatalf("lookups = %v", registry.lookups)
 	}
-	key := analysis.PackageVersion{Name: "widget", Version: "1.0.1"}
-	if !facts[key].HasPrevious || published[key].IsZero() {
+	lookup := analysis.RegistryLookup{Name: "widget", Version: "1.0.1", PreviousVersion: "1.0.0"}
+	if !facts[lookup].HasPrevious || published[analysis.PackageVersion{Name: "widget", Version: "1.0.1"}].IsZero() {
 		t.Fatalf("facts = %+v, published = %v", facts, published)
 	}
 	input.Facts = facts
 	drivers := analysis.Analyze(input, published).ChangedDependencies[0].RiskDrivers
 	if !containsString(drivers, analysis.DriverPublisherChanged) {
 		t.Fatalf("drivers = %v", drivers)
+	}
+}
+
+// publisherByPrevious reports a different previous publisher for each version
+// a package is updated from.
+type publisherByPrevious struct{}
+
+func (publisherByPrevious) PublishedAt(context.Context, string, string) (time.Time, error) {
+	panic("PublishedAt should not be used when VersionFacts is available")
+}
+
+func (publisherByPrevious) VersionFacts(_ context.Context, _, _, previous string) (npm.VersionFacts, error) {
+	facts := npm.VersionFacts{Published: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Publisher: "alice"}
+	switch previous {
+	case "1.0.0":
+		facts.HasPrevious, facts.PreviousPublisher = true, "alice"
+	case "0.9.0":
+		facts.HasPrevious, facts.PreviousPublisher = true, "mallory"
+	}
+	return facts, nil
+}
+
+func TestRegistryFactsComparePerPreviousVersion(t *testing.T) {
+	update := func(name, from string) analysis.Input {
+		return analysis.Input{
+			Target:       analysis.AnalysisTarget{DisplayName: name, ManifestPath: name + "/package.json", LockfilePath: name + "/package-lock.json", PackageManager: "npm"},
+			BaseManifest: &npm.PackageManifest{Dependencies: map[string]string{"widget": "^" + from}},
+			HeadManifest: &npm.PackageManifest{Dependencies: map[string]string{"widget": "^1.0.1"}},
+			BaseLockfile: &npm.Lockfile{Manager: "npm", Packages: map[string]npm.LockPackage{"node_modules/widget": {Path: "node_modules/widget", Name: "widget", Version: from}}},
+			HeadLockfile: &npm.Lockfile{Manager: "npm", Packages: map[string]npm.LockPackage{"node_modules/widget": {Path: "node_modules/widget", Name: "widget", Version: "1.0.1"}}},
+		}
+	}
+	// Both targets move widget to 1.0.1. Only the one coming from 0.9.0 sees a
+	// different publisher, so only that one may report the change.
+	inputs := []analysis.Input{update("same", "1.0.0"), update("changed", "0.9.0")}
+	published := map[analysis.PackageVersion]time.Time{}
+	facts := lookupRegistryFacts(context.Background(), publisherByPrevious{}, inputs, published)
+	for _, input := range inputs {
+		input.Facts = facts
+		drivers := analysis.Analyze(input, published).ChangedDependencies[0].RiskDrivers
+		want := input.Target.DisplayName == "changed"
+		if got := containsString(drivers, analysis.DriverPublisherChanged); got != want {
+			t.Fatalf("%s: publisher changed = %v, drivers = %v", input.Target.DisplayName, got, drivers)
+		}
 	}
 }

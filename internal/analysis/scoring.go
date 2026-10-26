@@ -88,7 +88,11 @@ func scoreChange(input Input, candidate candidateSummary, views targetLockViews,
 	if published, ok := publishedAt[key]; ok && !published.IsZero() {
 		sheet.add(input.Now.Sub(published) <= recentPublishWindow, scoreRecentlyPublished, DriverRecentlyPublished)
 	}
-	if facts, ok := input.Facts[key]; ok {
+	lookup := RegistryLookup{Name: candidate.Name, Version: candidate.ToVersion}
+	if updated {
+		lookup.PreviousVersion = candidate.FromVersion
+	}
+	if facts, ok := input.Facts[lookup]; ok {
 		sheet.add(candidate.ChangeType == ChangeAdded && !facts.PackageCreated.IsZero() && input.Now.Sub(facts.PackageCreated) <= newPackageWindow, scoreNewPackage, DriverNewPackage)
 		sheet.add(updated && facts.HasPrevious && facts.PreviousProvenance && !facts.Provenance, scoreProvenanceDropped, DriverProvenanceDropped)
 		sheet.add(updated && facts.HasPrevious && facts.Publisher != "" && facts.PreviousPublisher != "" && facts.Publisher != facts.PreviousPublisher, scorePublisherChanged, DriverPublisherChanged)

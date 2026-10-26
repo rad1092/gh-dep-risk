@@ -238,8 +238,11 @@ type Input struct {
 	HeadManifest              *npm.PackageManifest
 	BaseLockfile              *npm.Lockfile
 	HeadLockfile              *npm.Lockfile
-	// Facts holds npm registry facts for the version each change moves to.
-	Facts map[PackageVersion]npm.VersionFacts
+	// Facts holds npm registry facts for each change, keyed by the version it
+	// moves to and, for an update, the version it replaces. Two targets that
+	// move the same package to the same version from different versions get
+	// separate comparisons.
+	Facts map[RegistryLookup]npm.VersionFacts
 }
 
 // RegistryLookup is one package version to look up in the npm registry,

@@ -314,7 +314,7 @@ func parsePRArg(arg string) (ghclient.Repo, int, bool, error) {
 // lookupRegistryFacts asks the registry about every version the PR moves to.
 // Publish times go into publishedAt; clients that report more facts also
 // fill the returned map. Lookup failures are skipped.
-func lookupRegistryFacts(ctx context.Context, registry npm.RegistryClient, inputs []analysis.Input, publishedAt map[analysis.PackageVersion]time.Time) map[analysis.PackageVersion]npm.VersionFacts {
+func lookupRegistryFacts(ctx context.Context, registry npm.RegistryClient, inputs []analysis.Input, publishedAt map[analysis.PackageVersion]time.Time) map[analysis.RegistryLookup]npm.VersionFacts {
 	factsClient, hasFacts := registry.(npm.FactsClient)
 	if !hasFacts {
 		for _, target := range collectRegistryTargets(inputs) {
@@ -326,19 +326,15 @@ func lookupRegistryFacts(ctx context.Context, registry npm.RegistryClient, input
 		}
 		return nil
 	}
-	facts := map[analysis.PackageVersion]npm.VersionFacts{}
+	facts := map[analysis.RegistryLookup]npm.VersionFacts{}
 	for _, lookup := range collectRegistryLookups(inputs) {
-		key := analysis.PackageVersion{Name: lookup.Name, Version: lookup.Version}
-		if existing, ok := facts[key]; ok && (existing.HasPrevious || lookup.PreviousVersion == "") {
-			continue
-		}
 		found, err := factsClient.VersionFacts(ctx, lookup.Name, lookup.Version, lookup.PreviousVersion)
 		if err != nil {
 			continue
 		}
-		facts[key] = found
+		facts[lookup] = found
 		if !found.Published.IsZero() {
-			publishedAt[key] = found.Published
+			publishedAt[analysis.PackageVersion{Name: lookup.Name, Version: lookup.Version}] = found.Published
 		}
 	}
 	return facts
@@ -363,8 +359,7 @@ func collectRegistryLookups(inputs []analysis.Input) []analysis.RegistryLookup {
 		if lookups[i].Version != lookups[j].Version {
 			return lookups[i].Version < lookups[j].Version
 		}
-		// Updates first, so the facts kept for a version include the previous one.
-		return lookups[i].PreviousVersion > lookups[j].PreviousVersion
+		return lookups[i].PreviousVersion < lookups[j].PreviousVersion
 	})
 	return lookups
 }
